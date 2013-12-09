@@ -3,6 +3,8 @@
 the related discussion on <a href="http://www.reddit.com/r/haskell/comments/1qwjk6/l%C3%B6b_and_m%C3%B6b_strange_loops_in_haskell/">reddit.com/r/haskell</a>, in particular
 <a href="http://www.reddit.com/r/haskell/comments/1qwjk6/l%C3%B6b_and_m%C3%B6b_strange_loops_in_haskell/cdhsefm">psygnisfive's comment</a>. There's nothing much original in this post, I'm just working through the details. </p>
 
+<p> The LHS source for this post is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/loeb_and_moeb">https://github.com/carlohamalainen/playground/tree/master/haskell/loeb_and_moeb</a></p>
+
 > module Loeb where
 
 <p> In a spreadsheet one has a set of cells, and each cell can be defined in terms of values
