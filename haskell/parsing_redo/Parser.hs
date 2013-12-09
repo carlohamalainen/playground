@@ -40,7 +40,7 @@ instance Monad Parser where
     x >>= f = MkParser $ body
         where _ = x :: Parser a
               _ = f :: a -> Parser b
-            
+
               body :: String -> Maybe (String, b)
               body s = case p s of Just (s', x') -> parse (f x') s'
                                    Nothing       -> Nothing
@@ -124,7 +124,7 @@ sequenceParser (p:ps) = do r <- p
 list :: Parser a -> Parser [a]
 list p = many1 p ||| value []
 
--- produce a parser than accepts one or more 
+-- produce a parser than accepts one or more
 -- another nice one using do notation
 many1 :: Parser a -> Parser [a]
 many1 p = do
