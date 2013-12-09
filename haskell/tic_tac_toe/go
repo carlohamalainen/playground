@@ -1,0 +1,1 @@
+cat ../literate_template/header.html > TicTacToe.html; BlogLiterately TicTacToe.lhs >> TicTacToe.html
