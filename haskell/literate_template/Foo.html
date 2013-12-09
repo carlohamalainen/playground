@@ -1,0 +1,33 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>This is a literate Haskell file in “Bird” syntax. To compile to html use BlogLiterately.</p>
+<p> 
+To install BlogLiterately:
+</p>
+
+<pre>
+cabal update
+cabal install BlogLiterately
+</pre>
+
+<p> 
+Make sure that <code>$HOME/.cabal/bin</code> is in your <code>$PATH</code>. Then to compile <code>Foo.lhs</code> to <code>Foo.html</code> run:
+</p>
+
+<pre>
+cat header.html        >  Foo.html
+BlogLiterately Foo.lhs >> Foo.html
+</pre>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Foo</span> <span style="color: blue; font-weight: bold;">where</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span>
+<span style="">&gt;</span> <span style="">f</span> <span style="">x</span> <span style="color: red;">=</span> <span style="">x</span> <span style="">+</span> <span class="hs-num">1</span>
+</code></pre>
+<div class="references">
+
+</div>
