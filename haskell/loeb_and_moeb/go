@@ -1,0 +1,1 @@
+cat ../literate_template/header.html > Loeb.html; BlogLiterately Loeb.lhs >> Loeb.html

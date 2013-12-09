@@ -1,0 +1,246 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p> 
+Working through the detail of <a href="https://github.com/quchen/articles/blob/master/loeb-moeb.md">Löb and möb: strange loops in Haskell</a> and the related discussion on <a href="http://www.reddit.com/r/haskell/comments/1qwjk6/l%C3%B6b_and_m%C3%B6b_strange_loops_in_haskell/">reddit.com/r/haskell</a>, in particular <a href="http://www.reddit.com/r/haskell/comments/1qwjk6/l%C3%B6b_and_m%C3%B6b_strange_loops_in_haskell/cdhsefm">psygnisfive’s comment</a>. There’s nothing much original in this post, I’m just working through the details.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Loeb</span> <span style="color: blue; font-weight: bold;">where</span>
+</code></pre>
+<p> 
+In a spreadsheet one has a set of cells, and each cell can be defined in terms of values in the other cells. For example, let’s use four cells <code>x0</code>, <code>x1</code>, <code>x2</code>, and <code>x3</code> with the following definition:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f1</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs0</span> <span style="color: red;">=</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>          <span style="">xs1</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="">xs0</span>
+<span style="">&gt;</span>          <span style="">xs2</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="">xs1</span>
+<span style="">&gt;</span>          <span style="">xs3</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="">xs2</span>
+<span style="">&gt;</span>          <span style="">xs</span>  <span style="color: red;">=</span> <span style="color: red;">[</span><span style="">xs0</span><span style="color: red;">,</span> <span style="">xs1</span><span style="color: red;">,</span> <span style="">xs2</span><span style="color: red;">,</span> <span style="">xs3</span><span style="color: red;">]</span>
+<span style="">&gt;</span>          <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+The variable <code>xs0</code> appears in a few places but it can be factored out. Remove <code>xs0 = 1</code> and substitute the value <code>1</code> in the definition for <code>xs</code>. Also, <code>xs0</code> is the first element of the <code>xs</code> list, so refer to it using <code>xs !! 0</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f2</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs1</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>          <span style="">xs2</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="">xs1</span>
+<span style="">&gt;</span>          <span style="">xs3</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="">xs2</span>
+<span style="">&gt;</span>          <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">xs1</span><span style="color: red;">,</span> <span style="">xs2</span><span style="color: red;">,</span> <span style="">xs3</span><span style="color: red;">]</span>
+<span style="">&gt;</span>          <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+<p>Now do the same for <code>xs1</code>:</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f3</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f3</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs2</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>          <span style="">xs3</span> <span style="color: red;">=</span> <span style="">succ</span> <span style="">xs2</span>
+<span style="">&gt;</span>          <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span><span style="color: red;">,</span> <span style="">xs2</span><span style="color: red;">,</span> <span style="">xs3</span><span style="color: red;">]</span>
+<span style="">&gt;</span>          <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+The pattern should be clear, so now factor out <code>xs2</code> and <code>xs3</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f4</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f4</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>               <span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>               <span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>               <span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span>
+<span style="">&gt;</span>               <span style="color: red;">]</span>
+<span style="">&gt;</span>          <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+The common feature of the last three lines is that they are a function of <code>xs</code>. The first line is the constant <code>1</code>, and we can make this a function of <code>xs</code> with something like
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: red;">\</span><span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">-&gt;</span> <span class="hs-num">1</span>
+</code></pre>
+<p> 
+but the standard prelude provides <code>const 1</code> for just this purpose. So now we have:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f4_1</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f4_1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span style="">const</span> <span class="hs-num">1</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="color: red;">(</span><span style="">xs</span> <span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">]</span>
+<span style="">&gt;</span>          <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+So each line is a function of <code>xs</code>. Can we factor it out, in a sense, so each line looks more like the first? Yes:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f4_2</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f4_2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span style="">const</span> <span class="hs-num">1</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">h</span> <span style="color: red;">-&gt;</span> <span style="">h</span> <span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">h</span> <span style="color: red;">-&gt;</span> <span style="">h</span> <span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">h</span> <span style="color: red;">-&gt;</span> <span style="">h</span> <span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span> <span style="">$</span> <span style="">xs</span> 
+<span style="">&gt;</span>                 <span style="color: red;">]</span>
+<span style="">&gt;</span>          <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+The lambda expressions are a bit cumbersome. What we are doing is the <code>succ</code> function after selecting a certain element of a list. Haskell supports <a href="http://www.haskell.org/haskellwiki/Currying">currying</a>, and when one curries an operator, the left vs right arguments are respected:
+</p>
+
+<pre>
+*Main> :t (!!)
+(!!) :: [a] -> Int -> a
+
+*Main> :t (!! 3)
+(!! 3) :: [a] -> a
+</pre>
+
+<p> 
+So <code>succ (xs !! 0)</code> can be rewritten as <code>succ . (!! 0) $ xs</code>. Here is the next version:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f5</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f5</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span style="">const</span> <span class="hs-num">1</span>       <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>               <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>               <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>               <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span> <span style="">$</span> <span style="">xs</span>
+<span style="">&gt;</span>               <span style="color: red;">]</span>
+<span style="">&gt;</span>         <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+We can still ask if there is a way to generalise the definition of <code>f5</code>. Each line is of the form <code> function $ xs</code> so we could define a list of functions
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">fs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span style="">const</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>      <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>      <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>      <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span>
+<span style="">&gt;</span>      <span style="color: red;">]</span>
+</code></pre>
+<p> 
+and then <code>xs = map (-&gt; f xs) fs</code>. In full:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f6_1</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f6_1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">fs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span style="">const</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">]</span>
+<span style="">&gt;</span>            <span style="">xs</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">f</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">xs</span><span style="color: red;">)</span> <span style="">fs</span>
+<span style="">&gt;</span>            <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span> 
+</code></pre>
+<p> 
+Finally, the lambda expression is a bit clunky and Haskell provides the dollar-sign operator for function application (which is all the lambda expression is actually doing). With currying we get an appropriate type:
+</p>
+
+<pre>
+*Main> :t ($)
+($) :: (a -> b) -> a -> b
+
+*Main> :t ($ [1, 2, 3])
+($ [1, 2, 3]) :: Num t => ([t] -> b) -> b
+</pre>
+
+<p> 
+so <code>($ xs)</code> will be a function that takes a function that operates on a list and returns something (as long as <code>xs</code> is a list). This is just what we need:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">f6_2</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">f6_2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">fs</span> <span style="color: red;">=</span> <span style="color: red;">[</span> <span style="">const</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">,</span> <span style="">succ</span> <span style="">.</span> <span style="color: red;">(</span><span style="">!!</span> <span class="hs-num">2</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                 <span style="color: red;">]</span>
+<span style="">&gt;</span>            <span style="">xs</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">$</span> <span style="">xs</span><span style="color: red;">)</span> <span style="">fs</span>
+<span style="">&gt;</span>           <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span> 
+</code></pre>
+<p> 
+and this is the final form in <a href="http://www.reddit.com/r/haskell/comments/1qwjk6/l%C3%B6b_and_m%C3%B6b_strange_loops_in_haskell/cdhsefm">psygnisfive’s</a> comment.
+</p>
+
+<p> 
+(Embarrassingly for myself, I had assumed that the type of <code>(!! xs)</code> would be the result of currying on its <i>left-hand</i> parameter, not the right, which made the <code>map ($ xs) fs</code> form incomprehensible.)
+</p>
+
+
+<p> 
+To finish things off, we’d like to write a function that computes the result <code>f6_2</code> given the list <code>fs</code>. Here’s a first attempt:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loeb1</span> <span style="">fs</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">$</span> <span style="">xs</span><span style="color: red;">)</span> <span style="">fs</span> <span style="color: blue; font-weight: bold;">in</span> <span style="">xs</span>
+</code></pre>
+<p> 
+An alternative to using a <code>let</code> definition is to use a <code>where</code> (this brings us closer to the form given by <a href="https://github.com/quchen">quchen</a>):
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loeb2</span> <span style="">fs</span> <span style="color: red;">=</span> <span style="">go</span> <span style="color: blue; font-weight: bold;">where</span> <span style="">go</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">$</span> <span style="">go</span><span style="color: red;">)</span> <span style="">fs</span>
+</code></pre>
+<p> 
+Looking at the type of <code>loeb2</code>,
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loeb2</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="color: red;">[</span><span style="">b</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">b</span><span style="color: red;">]</span>
+</code></pre>
+<p> 
+shows the fact that we used a list as the starting point for the derivation. The first parameter is a list of functions that take a list and produce a value (of the same type), and the result is list. The final remark in psygnisfive’s comment is “rinse and repeat for your favourite functor.” What this refers to is the fact that <code>map</code> is specialised for lists. Functors generalise the idea of being able to “map over” something, and <code>fmap</code> generalises <code>map</code>:
+</p>
+
+<pre>
+*Main> :t map
+map :: (a -> b) -> [a] -> [b]
+
+*Main> :t fmap
+fmap :: Functor f => (a -> b) -> f a -> f b
+
+*Main> map (+2) [1, 2, 3]
+[3,4,5]
+
+*Main> fmap (+2) [1, 2, 3]
+[3,4,5]
+
+*Main> :m Data.Maybe
+
+Prelude Data.Maybe> fmap (+1) (Just 3)
+Just 4
+
+Prelude Data.Maybe> fmap (+1) Nothing
+Nothing
+</pre>
+
+<p> 
+Changing <code>map</code> to <code>fmap</code> in the definition of <code>loeb2</code> gets us the actual definition of <code>loeb</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loeb</span> <span style="color: red;">::</span> <span style="">Functor</span> <span style="">f</span> <span style="color: red;">=&gt;</span> <span style="">f</span> <span style="color: red;">(</span><span style="">f</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">b</span>
+<span style="">&gt;</span> <span style="">loeb</span> <span style="">fs</span> <span style="color: red;">=</span> <span style="">go</span> <span style="color: blue; font-weight: bold;">where</span> <span style="">go</span> <span style="color: red;">=</span> <span style="">fmap</span> <span style="color: red;">(</span><span style="">$</span> <span style="">go</span><span style="color: red;">)</span> <span style="">fs</span>
+</code></pre>
+<p> 
+For what it’s worth, putting <code>f = []</code> specialises to the type signature of the earlier <code>loeb2</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loeb</span> <span style="color: red;">::</span> <span style="">[]</span> <span style="color: red;">(</span><span style="">[]</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">[]</span> <span style="">b</span>
+</code></pre>
+<p> 
+which can be rewritten in the usual form
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loeb</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="color: red;">[</span><span style="">b</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">b</span><span style="color: red;">]</span>
+</code></pre>
+<p> 
+It doesn’t end! You can then abstract out the <code>fmap</code> by making it a parameter, which gives the <code>moeb</code> function:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">moeb</span> <span style="color: red;">::</span> <span style="">t</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="color: red;">(</span><span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">t</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">moeb</span> <span style="">fs</span> <span style="">x</span> <span style="color: red;">=</span> <span style="">go</span> <span style="color: blue; font-weight: bold;">where</span> <span style="">go</span> <span style="color: red;">=</span> <span style="">x</span> <span style="color: red;">(</span><span style="">$</span> <span style="">go</span><span style="color: red;">)</span> <span style="">fs</span>
+</code></pre>
+<p> 
+See the <a href="http://www.reddit.com/r/haskell/comments/1qwjk6/l%C3%B6b_and_m%C3%B6b_strange_loops_in_haskell/">discussion on reddit</a> for motivation and possible uses of <code>moeb</code>.
+</p>
+
+
+
+
+<div class="references">
+
+</div>
