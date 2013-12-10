@@ -7,8 +7,8 @@
 module Parser where
 
 import Data.Char
-import Data.Maybe
-import System.Environment
+import Data.Maybe()
+import System.Environment()
 
 data Hole = Hole
 hole = undefined
