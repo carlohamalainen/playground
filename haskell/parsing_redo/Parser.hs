@@ -61,7 +61,7 @@ character = MkParser (\s -> if s == []
 (MkParser p1) ||| (MkParser p2) = MkParser $ \s -> case p1 s of Just (r, c) -> Just (r, c)
                                                                 Nothing     -> p2 s
 
-mapParser :: Parser a -> (a -> b) -> Parser b
+mapParser :: forall a b. Parser a -> (a -> b) -> Parser b
 -- mapParser (MkParser p) f = MkParser (\s -> case p s of Just (r, c) -> Just (r, f c)
 --                                                        Nothing -> Nothing)
 mapParser (MkParser (p :: String -> Maybe (String, a))) (f :: a -> b) = MkParser body
