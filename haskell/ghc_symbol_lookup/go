@@ -1,0 +1,1 @@
+ghc -package ghc a_simple_example.hs
