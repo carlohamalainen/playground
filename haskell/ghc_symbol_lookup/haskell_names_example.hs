@@ -1,4 +1,4 @@
--- taken from http://documentup.com/haskell-suite/haskell-names
+-- Original file: http://documentup.com/haskell-suite/haskell-names
 
 import Language.Haskell.Exts.Annotated
 import Language.Haskell.Names
@@ -31,6 +31,11 @@ main = do
       getInstalledPackages (Proxy :: Proxy NamesDB) UserPackageDB <*>
       getInstalledPackages (Proxy :: Proxy NamesDB) GlobalPackageDB
 
+  forM_ ["Prelude", "Data.Maybe"] $ \m -> do print m
+                                             evalNamesModuleT (namesAndTypesInModule m ast) pkgs >>= print
+
+
+  {-
   headUsages <- evalNamesModuleT (findHeads ast) pkgs
 
   forM_ headUsages $ \loc ->
@@ -38,6 +43,18 @@ main = do
 
   when (null headUsages) $
     printf "Congratulations! Your code doesn't use Prelude.head\n"
+  -}
+
+
+
+data Hole = Hole
+hole = undefined
+
+namesAndTypesInModule :: String -> Module SrcSpanInfo -> ModuleT Symbols IO ([SymValueInfo OrigName], [SymTypeInfo OrigName])
+namesAndTypesInModule moduleName ast = do
+    Symbols values _types <- fromMaybe (error $ "Module " ++ moduleName ++ " not found") <$> getModuleInfo moduleName
+
+    return $ (Set.toList values, Set.toList _types)
 
 -- this is a computation in a ModuleT monad, because we need access to
 -- modules' interfaces
