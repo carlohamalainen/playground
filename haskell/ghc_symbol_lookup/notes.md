@@ -85,4 +85,4 @@ So maybe we have to use our A.hs, work through the "textual imports" to see whic
 spits out the thing we are using?
 
 
-
+Useful looking blog post: http://parenz.wordpress.com/2013/08/17/ghc-api-interpreted-compiled-and-package-modules/
