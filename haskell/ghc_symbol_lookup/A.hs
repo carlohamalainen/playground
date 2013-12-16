@@ -78,4 +78,5 @@ example =
 
 
         -- return $ (sourceImports, n, parsedSource d,"/n-----/n",  typecheckedSource d)
-        return (n, ghcNames, sourceImports, textualImports, ctx, rdrNames)
+        -- return (n, ghcNames, sourceImports, textualImports, ctx, rdrNames)
+        return (n, rdrNames, sourceImports, textualImports)
