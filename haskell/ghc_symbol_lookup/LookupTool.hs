@@ -1,6 +1,9 @@
 {-# LANGUAGE CPP #-}
 
-module LookupTool where
+-- FIXME we end up semi-compiling each module that we check - can we use
+-- an interactive load instead?
+
+module Main where
 
 import qualified GHC
 import Outputable
@@ -26,26 +29,87 @@ import Text.Printf
 import Control.Applicative
 import Control.Monad
 
+import System.Environment
+import System.Exit
+
+
+import qualified Distribution.Simple.Program
+import qualified Distribution.Simple.Compiler
+import qualified Distribution.Simple.PackageIndex
+import qualified Distribution.Simple.GHC
+import qualified Distribution.InstalledPackageInfo
+
 
 data HaskellModule = MkHaskellModule { modName :: String
                                      , modIsImplicit :: Bool
                                      } deriving (Show)
 
+matchTypeName :: String -> SymTypeInfo OrigName -> Bool
+matchTypeName symbol symTypeInfo = symbol == nameS
+    where GName modNameS nameS = origGName $ st_origName symTypeInfo
 
-lookupSymbol symbol fileName = undefined
+matchName :: String -> SymValueInfo OrigName -> Bool
+matchName symbol symValueInfo = symbol == nameS
+    where GName modNameS nameS = origGName $ sv_origName symValueInfo
 
-main = do
-    -- 1, get import list
-    res <- getImports "B.hs" "B"
-    print $ map conv res
 
-    -- 2, look up exported things.
+-- moduleExportsThing :: String -> String -> 
+moduleExportsThing symbol (MkHaskellModule moduleName _) = do
+    pkgs <- (++) <$>
+              getInstalledPackages (Proxy :: Proxy NamesDB) UserPackageDB <*>
+              getInstalledPackages (Proxy :: Proxy NamesDB) GlobalPackageDB
+    
+    (names, types) <- evalNamesModuleT (namesAndTypesInModule moduleName) pkgs
+
+    return $ (any (matchName symbol) names) || (any (matchTypeName symbol) types)
+
+-- getGHCPackages :: IO [InstalledPackageInfo]
+-- getGHCPackages = do
+--   pc <- Distribution.Simple.Program.configureAllKnownPrograms minBound (Distribution.Simple.Program.addKnownPrograms [Distribution.Simple.Program.ghcProgram,Distribution.Simple.Program.ghcPkgProgram] Distribution.Simple.Program.emptyProgramConfiguration)
+--   ix <- getInstalledPackages minBound [GlobalPackageDB, UserPackageDB] pc
+--   return (Distribution.Simple.PackageIndex.allPackages ix)
+
+go haskellFile haskellModule symbol = do
+    -- Get list of imports from this file/module
+    imports <- (map conv) <$> getImports haskellFile haskellModule
+
     pkgs <- (++) <$>
               getInstalledPackages (Proxy :: Proxy NamesDB) UserPackageDB <*>
               getInstalledPackages (Proxy :: Proxy NamesDB) GlobalPackageDB
 
-    forM_ ["Prelude", "Data.Maybe"] $ \m -> do print m
-                                               evalNamesModuleT (namesAndTypesInModule m) pkgs >>= print
+    pkgs1 <- getInstalledPackages (Proxy :: Proxy NamesDB) UserPackageDB
+    pkgs2 <- getInstalledPackages (Proxy :: Proxy NamesDB) GlobalPackageDB
+
+    print $ length pkgs1
+    print $ length pkgs2
+    print ""
+    print ""
+
+    let grr = imports !! 1
+
+    (names, types) <- evalNamesModuleT (namesAndTypesInModule (modName grr)) pkgs
+
+    {-
+    matches <- zip imports <$> mapM (moduleExportsThing symbol) imports
+
+    let finds = find snd matches
+
+    case finds of Just (MkHaskellModule name implicit, _) -> putStrLn $ "Found \"" ++ symbol ++ "\" in " ++ name
+                  Nothing                                 -> putStrLn $ "Error: could not find \"" ++ symbol ++ "\""
+    -}
+
+    print "boo"
+
+main = do
+    args <- getArgs
+
+    -- FIXME brittle
+    let haskellFile   = args !! 0
+        haskellModule = args !! 1
+        symbol        = args !! 2
+
+    go haskellFile haskellModule symbol
+
 
 conv :: SrcLoc.Located (GHC.ImportDecl GHC.RdrName) -> HaskellModule
 conv idecl = MkHaskellModule name isImplicit
