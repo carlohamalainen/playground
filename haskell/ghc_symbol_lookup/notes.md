@@ -86,3 +86,6 @@ spits out the thing we are using?
 
 
 Useful looking blog post: http://parenz.wordpress.com/2013/08/17/ghc-api-interpreted-compiled-and-package-modules/
+
+http://markmail.org/message/tqv5nruic74sbkde#query:+page:1+mid:6upbo6j34mr4s6jz+state:results
+
