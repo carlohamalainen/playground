@@ -77,28 +77,14 @@ go haskellFile haskellModule symbol = do
               getInstalledPackages (Proxy :: Proxy NamesDB) UserPackageDB <*>
               getInstalledPackages (Proxy :: Proxy NamesDB) GlobalPackageDB
 
-    pkgs1 <- getInstalledPackages (Proxy :: Proxy NamesDB) UserPackageDB
-    pkgs2 <- getInstalledPackages (Proxy :: Proxy NamesDB) GlobalPackageDB
+    (names, types) <- evalNamesModuleT (namesAndTypesInModule haskellModule) pkgs
 
-    print $ length pkgs1
-    print $ length pkgs2
-    print ""
-    print ""
-
-    let grr = imports !! 1
-
-    (names, types) <- evalNamesModuleT (namesAndTypesInModule (modName grr)) pkgs
-
-    {-
     matches <- zip imports <$> mapM (moduleExportsThing symbol) imports
 
     let finds = find snd matches
 
     case finds of Just (MkHaskellModule name implicit, _) -> putStrLn $ "Found \"" ++ symbol ++ "\" in " ++ name
                   Nothing                                 -> putStrLn $ "Error: could not find \"" ++ symbol ++ "\""
-    -}
-
-    print "boo"
 
 main = do
     args <- getArgs
