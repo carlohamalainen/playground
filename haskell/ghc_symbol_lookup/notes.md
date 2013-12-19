@@ -110,3 +110,13 @@ Print out the place where the name was imported
 http://osdir.com/ml/glasgow-haskell-users@haskell.org/2013-07/msg00028.html
 
 
+
+
+https://github.com/JPMoresmau/BuildWrapper/blob/master/newbuildutility.txt
+
+
+
+this does a lot of stuff, should read:
+
+http://hackage.haskell.org/package/buildwrapper-0.6.0/docs/src/Language-Haskell-BuildWrapper-GHCStorage.html
+

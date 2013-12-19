@@ -13,6 +13,8 @@ from <code>Prelude</code>. </p>
 <p> After a few days of tinkering with the GHC API I came up with this: </p>
 
 > {-# LANGUAGE CPP #-}
+> {-# LANGUAGE Rank2Types #-}
+>
 > import Control.Applicative
 > import Control.Monad
 > import DynFlags
@@ -24,6 +26,15 @@ from <code>Prelude</code>. </p>
 > import Outputable
 > import RdrName
 > import System.Environment
+> import Data.Typeable
+> import GHC.SYB.Utils
+> import Data.Generics hiding (typeOf)
+> import Data.Maybe
+> import TcRnTypes
+> import qualified CoreMonad
+> import Desugar
+> import Data.List
+> import Control.Monad.Instances
 >
 > import qualified SrcLoc
 
@@ -149,6 +160,7 @@ imported from. </p>
 >         let guts = coreModule d            :: ModGuts
 >             gre = HscTypes.mg_rdr_env guts :: GlobalRdrEnv
 >
+>         -- FIXME this can cause a GHC panic if the name is ambiguous
 >         names <- parseName symbol
 >         let occNames = map nameOccName names                        :: [OccName]
 >             occNamesLookups = map (lookupGlobalRdrEnv gre) occNames :: [[GlobalRdrElt]]
@@ -175,20 +187,21 @@ in the GHC source code was very helpful: </p>
 
 > -- Module in which a name is *defined*.
 > symbolDefinedIn :: Name -> Module
-> symbolDefinedIn occName = nameModule occName
+> symbolDefinedIn occname = nameModule occname
 >
 > -- List of possible modules which have resulted in 
 > -- the name being in the current scope. Using a
 > -- global reader we get the provenance data and then
 > -- get the list of import specs.
-> symbolImportedFrom :: OccName -> GlobalRdrElt -> [ModuleName]
-> symbolImportedFrom occName occNameLookup = map importSpecModule whys
+> symbolImportedFrom :: GlobalRdrElt -> [ModuleName]
+> symbolImportedFrom occNameLookup = map importSpecModule whys
 >   where prov = gre_prov occNameLookup :: Provenance
 >         Imported whys = prov
 >         _ = whys :: [ImportSpec] -- dummy binding so we can see that 'whys' has this type, just for documentation
 
 <p> A basic <code>main</code> so that we can use this as a command line utility: </p>
 
+> main :: IO ()
 > main = do
 >   args <- getArgs
 >
@@ -196,24 +209,51 @@ in the GHC source code was very helpful: </p>
 >   let targetFile     = args !! 0
 >       targetModule   = args !! 1
 >       symbol         = args !! 2
+>       lineNo         = (read $ args !! 3) :: Int
+>       colNo          = (read $ args !! 4) :: Int
 >
->   importList <- (map (modName . toHaskellModule)) <$> getImports targetFile targetModule
+>   _importList <- (map (modName . toHaskellModule)) <$> getImports targetFile targetModule
 >
->   x <- lookupSymbol targetFile targetModule symbol importList
+>   qn <- qualifiedName targetFile targetModule lineNo colNo _importList
+>   let possibleExtraImport = moduleOfQualifiedName <$> qn
+>       qualifiedNamePart   = nameOfQualifiedName   <$> qn
 >
->   forM_ x $ \(name, lookup) -> do putStrLn $ "file:          " ++ targetFile
+>   -- when (symbol /= qualifiedNamePart) (error $ "derp: " ++ symbol ++ " /= " ++ qualifiedNamePart)
+>
+>   -- FIXME clunky, use catMaybes or whatever.
+>   let importList = if isJust possibleExtraImport then _importList ++ [fromJust possibleExtraImport] else _importList
+>
+>   -- FIXME assert end of qn == symbol
+>
+>   -- x <- lookupSymbol targetFile targetModule symbol importList
+>
+>   let symbol' = if isJust qn then fromJust qn else symbol
+>   x <- lookupSymbol targetFile targetModule symbol' importList
+>
+>   forM_ x $ \(name, lookUp) -> do putStrLn $ "file:          " ++ targetFile
 >                                   putStrLn $ "module:        " ++ targetModule
->                                   putStrLn $ "symbol:        " ++ symbol
+>                                   putStrLn $ "symbol:        " ++ symbol'
 >                                   putStrLn $ "imports:       " ++ (show importList)
 >
 >                                   let definedIn    = symbolDefinedIn name
->                                       importedFrom = map (symbolImportedFrom name) lookup
+>                                       importedFrom = map symbolImportedFrom lookUp
 >
 >                                   putStrLn $ "defined in:    " ++ (showSDoc tracingDynFlags (ppr $ definedIn))
 >                                   putStrLn $ "imported from: " ++ (showSDoc tracingDynFlags (ppr $ importedFrom))
 
+> -- FIXME total hack, should deconstruct the name properly.
+> moduleOfQualifiedName :: String -> String
+> moduleOfQualifiedName qn = concat $ intersperse "." $ reverse $ tail $ reverse $ separateBy '.' qn
 
+> -- FIXME total hack, should deconstruct the name properly.
+> nameOfQualifiedName :: String -> String
+> nameOfQualifiedName qn = last $ separateBy '.' qn
 
+> -- copied from http://stackoverflow.com/a/4978733
+> separateBy :: Eq a => a -> [a] -> [[a]]
+> separateBy chr = unfoldr sep' where
+>   sep' [] = Nothing
+>   sep' l  = Just . fmap (drop 1) . break (==chr) $ l
 
 <pre>
 
@@ -270,4 +310,79 @@ The fourth case, looking up <code>fromJust</code> is straightforward
 Since the user explicitly imported <code>Data.Maybe</code> it would be preferable to point them
 at <a href="http://hackage.haskell.org/package/base-4.6.0.1/docs/Data-Maybe.html">base-4.6.0.1/docs/Data-Maybe.html</a> instead
 of <a href="https://hackage.haskell.org/package/base-4.6.0.1/docs/Prelude.html">base-4.6.0.1/docs/Prelude.html</a>.
+
+
+<p> There is one problem with this code, in that if the symbol is
+ambiguous then it causes a panic. For example in one of my other
+Haskell projects I can't look up <code>many</code>: </p>
+
+<pre>
+$ guts S3Checksums.hs S3Checksums many
+guts: panic! (the 'impossible' happened)
+  (GHC version 7.6.3 for x86_64-unknown-linux):
+	Ambiguous occurrence `many'
+It could refer to either `Text.Parsec.Prim.many',
+                         imported from `Text.Parsec'
+                         (and originally defined in `parsec-3.1.4:Text.Parsec.Prim')
+                      or `Control.Applicative.many',
+                         imported from `Control.Applicative'
+
+
+Please report this as a GHC bug:  http://www.haskell.org/ghc/reportabug
+</pre>
+
+<p> This isn't really a GHC bug, in my opinion. If we qualify the name that we are searching for then it works ok: </p>
+
+<pre>
+$ guts S3Checksums.hs S3Checksums Text.Parsec.many
+file:          S3Checksums.hs
+module:        S3Checksums
+symbol:        Text.Parsec.many
+imports:       ["Prelude","Utils","Text.Parsec.String","Text.Parsec","System.Process","System.IO"
+               ,"System.FilePath.Posix","System.Directory","Data.Map","Data.Functor.Identity"
+               ,"Control.Monad.State","Control.Monad","Control.Applicative"]
+defined in:    parsec-3.1.4:Text.Parsec.Prim
+imported from: [[Text.Parsec]]
+</pre>
+
+
+> -- listifySpans and listifyStaged are copied from ghcmod/Language/Haskell/GhcMod/Info.hs
+> listifySpans :: Typeable a => TypecheckedSource -> (Int, Int) -> [Located a]
+> listifySpans tcs lc = listifyStaged TypeChecker p tcs
+>   where
+>     p (L spn _) = isGoodSrcSpan spn && spn `spans` lc
+>
+> listifyStaged :: Typeable r => Stage -> (r -> Bool) -> GenericQ [r]
+> listifyStaged s p = everythingStaged s (++) [] ([] `mkQ` (\x -> [x | p x]))
+
+
+> qualifiedName :: String -> String -> Int -> Int -> [String] -> IO (Maybe String)
+> qualifiedName targetFile targetModuleName lineNo colNo importList =
+>     defaultErrorHandler defaultFatalMessager defaultFlushOut $ do
+>       runGhc (Just libdir) $ do
+>         dflags <- getSessionDynFlags
+>         let dflags' = foldl xopt_set dflags [Opt_Cpp, Opt_ImplicitPrelude, Opt_MagicHash]
+>         setSessionDynFlags dflags' { hscTarget = HscInterpreted, ghcLink = LinkInMemory }
+>
+>         target <- guessTarget targetFile Nothing
+>         setTargets [target]
+>         load LoadAllTargets
+>
+>         setContext $ map (IIDecl . simpleImportDecl . mkModuleName) (targetModuleName:importList)
+>
+>         modSummary <- getModSummary $ mkModuleName targetModuleName :: Ghc ModSummary
+>         p <- parseModule modSummary   :: Ghc ParsedModule
+>         t <- typecheckModule p        :: Ghc TypecheckedModule
+>
+>         let TypecheckedModule{tm_typechecked_source = tcs} = t
+>             -- bs = listifySpans tcs (lineNo, colNo) :: [LHsBind Id]
+>             es = listifySpans tcs (lineNo, colNo) :: [LHsExpr Id]
+>             -- ps = listifySpans tcs (lineNo, colNo) :: [LPat Id]
+>         
+>         -- Why is it correct to take the last thing from
+>         -- this list? What is listifySpans doing?
+>
+>         if length es == 0 then return Nothing
+>                           else return $ Just (showSDoc tracingDynFlags (ppr $ last es))
+>         
 
