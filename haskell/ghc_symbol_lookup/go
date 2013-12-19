@@ -1,1 +1,6 @@
-ghc -package ghc a_simple_example.hs
+#!/bin/bash
+
+for f in guts
+do
+    cat ../literate_template/header.html > ${f}.html; BlogLiterately ${f}.lhs >> ${f}.html
+done

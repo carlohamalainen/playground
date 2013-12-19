@@ -10,6 +10,10 @@ import Outputable
 import GHC.Paths ( libdir )
 import DynFlags
 
+import Name
+import RdrName
+import HscTypes
+
 import qualified SrcLoc
 import FastString
 
@@ -115,12 +119,23 @@ runCheckType :: String -> String -> String -> [HaskellModule] -> IO CheckResult
 runCheckType = runCheckCmd "CheckType"
 
 go haskellFile haskellModule symbol = do
+    x <- findNamesTest haskellFile haskellModule
+    -- print $ "parsed name: " ++ (showSDoc tracingDynFlags (ppr $ x))
+    -- print $ "nameModule: " ++ (showSDoc tracingDynFlags (ppr $ GHC.nameModule x))
+    -- print $ "nameSrcLoc: " ++ (showSDoc tracingDynFlags (ppr $ nameSrcLoc x))
+    -- print "derp"
+    print $ "=====> " ++ (showSDoc tracingDynFlags (ppr x))
+
+    {-
     -- Get list of imports from this file/module
     imports <- inits <$> (map conv) <$> getImports haskellFile haskellModule
 
     typeChecks <- (zip (map (map modName) imports)) <$> mapM (runCheckType haskellFile haskellModule symbol) imports
 
     forM_ typeChecks print
+    -}
+
+
 
     -- typeChecks <- (zip imports) <$> mapM (runCheckType haskellFile haskellModule symbol) imports
     -- kindChecks <- (zip imports) <$> mapM (runCheckKind haskellFile haskellModule symbol) imports
@@ -201,4 +216,62 @@ namesAndTypesInModule moduleName = do
     Symbols values _types <- fromMaybe (error $ "Module " ++ moduleName ++ " not found") <$> getModuleInfo moduleName
 
     return $ (Set.toList values, Set.toList _types)
+
+
+-- findNamesTest :: FilePath -> String -> IO [SrcLoc.Located (GHC.ImportDecl GHC.RdrName)]
+findNamesTest targetFile moduleName = 
+    GHC.defaultErrorHandler defaultFatalMessager defaultFlushOut $ do
+      GHC.runGhc (Just libdir) $ do
+        dflags <- GHC.getSessionDynFlags
+
+        -- FIXME What if the source file does *not* have an
+        -- implicit prelude import? We'll have to use a different
+        -- definition of dflags'?
+
+        let dflags' = foldl xopt_set dflags
+                            [Opt_Cpp, Opt_ImplicitPrelude, Opt_MagicHash]
+        GHC.setSessionDynFlags dflags'
+
+        target <- GHC.guessTarget targetFile Nothing
+        GHC.setTargets [target]
+        GHC.load GHC.LoadAllTargets
+ 
+        -- Set the context for each of the modules; note the use of IIDecl.
+        GHC.setContext $ map (GHC.IIDecl . GHC.simpleImportDecl . GHC.mkModuleName) ["Prelude", moduleName]
+
+        -- http://stackoverflow.com/questions/11571520/reify-a-module-into-a-record
+        -- GHC.setContext [GHC.IIDecl (GHC.simpleImportDecl (GHC.mkModuleName moduleName))]
+
+        modSum <- GHC.getModSummary $ GHC.mkModuleName moduleName
+
+        -- let sourceImports = ms_srcimps modSum
+        let textualImports = GHC.ms_textual_imps modSum
+
+        h <- head <$> GHC.parseName "head"
+
+        let h' = nameOccName h
+
+        let env = emptyGlobalRdrEnv
+
+        let env' = lookupGlobalRdrEnv env h'
+
+        -- from the RewriteM thing
+        -- let gre = HscTypes.mg_rdr_env Hole
+
+        
+
+        return $ GHC.nameModule h
+
+        -- let xxx = lookupGRE_RdrName 
+
+        -- return h
+
+
+
+
+
+
+
+
+
 

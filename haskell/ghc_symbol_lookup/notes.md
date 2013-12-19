@@ -89,3 +89,24 @@ Useful looking blog post: http://parenz.wordpress.com/2013/08/17/ghc-api-interpr
 
 http://markmail.org/message/tqv5nruic74sbkde#query:+page:1+mid:6upbo6j34mr4s6jz+state:results
 
+
+
+
+
+http://web.mit.edu/~ezyang/Public/ghc-cmm-09Dec10/compiler/rename/RnEnv.lhs
+
+
+
+pprNameProvenance :: GlobalRdrElt -> SDocSource
+
+Print out the place where the name was imported
+
+
+
+
+
+
+
+http://osdir.com/ml/glasgow-haskell-users@haskell.org/2013-07/msg00028.html
+
+
