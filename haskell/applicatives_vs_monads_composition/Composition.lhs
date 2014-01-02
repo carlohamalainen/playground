@@ -172,6 +172,8 @@ narrated screencast compared to a linear written text. </p>
 </center>
 </p>
 
+<p> (Be sure to watch in 720p fullscreen otherwise the text is illegible.) </p>
+
 <p> If you don't want to watch the screencast, just take my word that we can fill in the definition for
 the <code>Compose</code> instance of <code>Applicative</code>. (Or, sneak a peek at the source code
 for <a href="http://hackage.haskell.org/package/applicative-extras-0.1.8/docs/Control-Applicative-Compose.html">Control.Applicative.Compose</a>.)
