@@ -167,10 +167,15 @@ to find the answer. With hole-driven development we have a bit of
 a conversation with the type system and this is easier to show in a
 narrated screencast compared to a linear written text. </p>
 
-<p> screencast here </p>
+<p> <center>
+<iframe width="560" height="315" src="//www.youtube.com/embed/AjtQ0sQaHn0?vq=hd1080" frameborder="0" allowfullscreen></iframe>
+</center>
+</p>
 
 <p> If you don't want to watch the screencast, just take my word that we can fill in the definition for
-the <code>Compose</code> instance of <code>Applicative</code>. Another exercise for the reader: verify that the following
+the <code>Compose</code> instance of <code>Applicative</code>. (Or, sneak a peek at the source code
+for <a href="http://hackage.haskell.org/package/applicative-extras-0.1.8/docs/Control-Applicative-Compose.html">Control.Applicative.Compose</a>.)
+Another exercise for the reader: verify that the following
 <a href="http://en.wikibooks.org/wiki/Haskell/Applicative_Functors">functor laws</a> hold. </p>
 
 < pure id <*> v = v                            -- Identity
