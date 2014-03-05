@@ -1,6 +1,7 @@
 <p> Note to self on constructing a monad transformer. In a way this follows on from
 the earlier post
-<a href="http://carlo-hamalainen.net/blog/2014/1/2/applicatives-compose-monads-do-not">Applicatives compose, monads do not</a>. </p>
+<a href="http://carlo-hamalainen.net/blog/2014/1/2/applicatives-compose-monads-do-not">Applicatives compose, monads do not</a>. Literate Haskell source
+for this post is available here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/transformers">https://github.com/carlohamalainen/playground/tree/master/haskell/transformers</a>. </p>
 
 > {-# LANGUAGE ScopedTypeVariables, InstanceSigs, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}
 >
