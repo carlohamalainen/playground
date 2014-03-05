@@ -1,0 +1,242 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p> 
+Note to self on constructing a monad transformer. In a way this follows on from the earlier post <a href="http://carlo-hamalainen.net/blog/2014/1/2/applicatives-compose-monads-do-not">Applicatives compose, monads do not</a>.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE ScopedTypeVariables, InstanceSigs, MultiParamTypeClasses, FunctionalDependencies, FlexibleInstances #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">MyOwnReaderT</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">hole</span> <span style="color: red;">=</span> <span style="">undefined</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Hole</span> <span style="color: red;">=</span> <span style="">Hole</span>
+</code></pre>
+<p> 
+A <code>Reader</code> is a data type that encapsulates an environment. The <code>runReader</code> function takes an environment (a <code>Reader</code>) and runs it, producing the result of type <code>a</code>.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">newtype</span> <span style="">Reader</span> <span style="">r</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Reader</span> <span style="color: red;">{</span> <span style="">runReader</span> <span style="color: red;">::</span> <span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: red;">}</span>
+</code></pre>
+<p> 
+Note that with record syntax, the type of <code>runReader</code> is actually
+</p>
+
+<pre>
+runReader :: Reader r a -> (r -> a)
+</pre>
+
+<p> 
+Reader that increments its environment value, returning the same type:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">reader1</span> <span style="color: red;">::</span> <span style="">Num</span> <span style="">r</span> <span style="color: red;">=&gt;</span> <span style="">Reader</span> <span style="">r</span> <span style="">r</span>
+<span style="">&gt;</span> <span style="">reader1</span> <span style="color: red;">=</span> <span style="">Reader</span> <span style="">$</span> <span style="color: red;">\</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">r</span> <span style="">+</span> <span class="hs-num">1</span>
+</code></pre>
+<p> 
+Reader that converts its environment value into a string:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">reader2</span> <span style="color: red;">::</span> <span style="">Show</span> <span style="">r</span> <span style="color: red;">=&gt;</span> <span style="">Reader</span> <span style="">r</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">reader2</span> <span style="color: red;">=</span> <span style="">Reader</span> <span style="">$</span> <span style="color: red;">\</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="color: teal;">"reader2: "</span> <span style="">++</span> <span style="color: red;">(</span><span style="">show</span> <span style="">r</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+“Run” the reader using <code>runReader</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReader</span> <span style="">reader1</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span class="hs-num">101</span>
+<span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReader</span> <span style="">reader2</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span style="color: teal;">"reader2: 100"</span>
+</code></pre>
+<p> 
+There’s nothing magic about <code>runReader</code>; it is just taking the function out of the data type. We can do it manually ourselves:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runReader'</span> <span style="color: red;">::</span> <span style="">Reader</span> <span style="">r</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">runReader'</span> <span style="color: red;">(</span><span style="">Reader</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">f</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReader'</span> <span style="">reader1</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span class="hs-num">101</span>
+</code></pre>
+<p> 
+Next, make <code>Reader</code> an instance of <code>Monad</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Monad</span> <span style="color: red;">(</span><span style="">Reader</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">return</span> <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Reader</span> <span style="">r</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">return</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Reader</span> <span style="">$</span> <span style="color: red;">\</span><span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">&gt;&gt;=</span><span style="color: red;">)</span> <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">a</span> <span style="">b</span><span style="">.</span> <span style="">Reader</span> <span style="">r</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Reader</span> <span style="">r</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Reader</span> <span style="">r</span> <span style="">b</span>
+<span style="">&gt;</span>     <span style="">m</span> <span style="">&gt;&gt;=</span> <span style="">k</span>  <span style="color: red;">=</span> <span style="">Reader</span> <span style="">$</span> <span style="color: red;">\</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">runReader</span> <span style="color: red;">(</span><span style="">k</span> <span style="color: red;">(</span><span style="">runReader</span> <span style="">m</span> <span style="">r</span> <span style="color: red;">::</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">::</span> <span style="">Reader</span> <span style="">r</span> <span style="">b</span><span style="color: red;">)</span> <span style="">r</span>
+</code></pre>
+<p> 
+The definition of <code>&gt;&gt;=</code> is relatively easy to work out using <a href="http://matthew.brecknell.net/post/hole-driven-haskell/">hole driven development</a>.
+</p>
+
+<p> 
+Example usage:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">eg1</span> <span style="color: red;">::</span> <span style="">Reader</span> <span style="">Int</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">eg1</span> <span style="color: red;">=</span> <span style="">Reader</span> <span style="">id</span> <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="">e</span> <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="">$</span> <span style="color: teal;">"hey, "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+</code></pre>
+<p> 
+Or in the more readable <code>do</code> notation:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">eg1'</span> <span style="color: red;">::</span> <span style="">Reader</span> <span style="">Int</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">eg1'</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">Reader</span> <span style="">id</span>
+<span style="">&gt;</span>           <span style="">return</span> <span style="">$</span> <span style="color: teal;">"hey, "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReader</span> <span style="">eg1'</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span style="color: teal;">"hey, 100"</span>
+</code></pre>
+<p> 
+Note that we use <code>id</code> to produce a <code>Reader</code> that just passes its environment argument along as the output. See <code>readerAsk</code> later for the equivalent situation which uses <code>return</code> for <code>MonadReader</code>.
+</p>
+
+<p> 
+Since <code>[]</code> is an instance of <code>Monad</code> we can also do things like this:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">eg1''</span> <span style="color: red;">::</span> <span style="">Reader</span> <span style="">Int</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">eg1''</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">Reader</span> <span style="color: red;">(</span><span style="">return</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">[]</span> <span style="">Int</span><span style="color: red;">)</span>
+<span style="">&gt;</span>            <span style="">return</span> <span style="">$</span> <span style="color: teal;">"hey, "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReader</span> <span style="">eg1''</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span style="color: teal;">"hey, [100]"</span>
+</code></pre>
+<p> 
+<p>We’d like to use the <code>Reader</code> in conjunction with other monads, for example running <code>IO</code> actions but having access to the reader’s environment. To do this we create a transformer, which we’ll call <code>ReaderT</code>:</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">newtype</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="color: red;">{</span> <span style="">runReaderT</span> <span style="color: red;">::</span> <span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">}</span>
+</code></pre>
+<p> 
+The <code>r</code> parameter is the reader environment as before, <code>m</code> is the monad (for example <code>IO</code>), and <code>a</code> is the result type, as before. Again, note the actual type of <code>runReaderT</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runReaderT</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+It takes a <code>ReaderT</code> and provides us with a function that takes a reader environment of type <code>r</code> and produces a monadic value. Following from the <code>Monad</code> instance declaration for <code>Reader</code> it is straightforward to write the definition for <code>ReaderT</code>.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">Monad</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">r</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">return</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="">$</span> <span style="color: red;">\</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">&gt;&gt;=</span><span style="color: red;">)</span> <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">a</span> <span style="">b</span><span style="">.</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">b</span>
+<span style="">&gt;</span>     <span style="">m</span> <span style="">&gt;&gt;=</span> <span style="">k</span>  <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="">$</span> <span style="color: red;">\</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">a'</span> <span style="color: red;">=</span> <span style="">runReaderT</span> <span style="">m</span> <span style="">r</span> <span style="color: red;">::</span> <span style="">m</span> <span style="">a</span>
+<span style="">&gt;</span>                                   <span style="">a''</span> <span style="color: red;">&lt;-</span> <span style="">a'</span>
+<span style="">&gt;</span>                                   <span style="">runReaderT</span> <span style="color: red;">(</span><span style="">k</span> <span style="">a''</span><span style="color: red;">)</span> <span style="">r</span> <span style="color: red;">::</span> <span style="">m</span> <span style="">b</span>
+</code></pre>
+<p> 
+With a <code>ReaderT</code> as the outer monad, we would like to “lift” a monadic computation into the reader. A monadic action doesn’t know anything about the reader environment, so to lift the monadic value we just create a <code>ReaderT</code> with a function that ignores the environment:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">liftReaderT</span> <span style="color: red;">::</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">liftReaderT</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">-&gt;</span> <span style="">m</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+Example usage:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">egLift</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">Int</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">egLift</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">ReaderT</span> <span style="color: red;">(</span><span style="">return</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">Int</span><span style="color: red;">)</span> <span style="color: green;">-- This is similar to "Reader id" earlier.</span>
+<span style="">&gt;</span>             <span style="">liftReaderT</span> <span style="">$</span> <span style="">print</span> <span style="color: teal;">"boo"</span>
+<span style="">&gt;</span>             <span style="">liftReaderT</span> <span style="">$</span> <span style="">print</span> <span style="">$</span> <span style="color: teal;">"value of e: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+</code></pre>
+<p> 
+<p>Note the type of <code>return</code> on the first line of <code>egLift</code>. In this context, <code>return :: a -&gt; m a</code> is the equivalent of <code>id :: a -&gt; a</code> from the earlier <code>Reader</code> example.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReaderT</span> <span style="">egLift</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span style="color: teal;">"boo"</span>
+<span style="">&gt;</span> <span style="color: teal;">"value of e: 100"</span>
+</code></pre>
+<p> 
+More generally, let’s name the “ask” function:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">readerAsk</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Monad</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">r</span>
+<span style="">&gt;</span> <span style="">readerAsk</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="">return</span>
+</code></pre>
+<p> 
+If we want to modify the environment, we use <code>withReaderT</code> which takes as its first parameter a function to modify the environment. Note that the result is of type <code>ReaderT r’ m a</code> so the function is of type <code>r’ -&gt; r</code> which modifies the supplied reader of type <code>ReaderT r m a</code>.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">withReaderT</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">r'</span> <span style="color: red;">-&gt;</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r'</span> <span style="">m</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">withReaderT</span> <span style="">f</span> <span style="">rt</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="">$</span> <span style="color: red;">(</span><span style="">runReaderT</span> <span style="">rt</span><span style="color: red;">)</span> <span style="">.</span> <span style="">f</span>
+</code></pre>
+<p> 
+Lastly, it is convenient to apply a function to the current environment.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">readerReader</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">readerReader</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="">$</span> <span style="color: red;">\</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="color: red;">(</span><span style="">f</span> <span style="">r</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+This is almost the same as <code>readerAsk</code> except that we create a reader that returns <code>f r</code> instead of <code>f</code>. In other words:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">readerAsk'</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Monad</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">r</span>
+<span style="">&gt;</span> <span style="">readerAsk'</span> <span style="color: red;">=</span> <span style="">readerReader</span> <span style="">id</span>
+</code></pre>
+<p> 
+Finally, we collect the functions <code>readerAsk</code>, <code>withReader</code>, and <code>readerReader</code> in a type class <code>MonadReader</code> and give them more general names:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="color: red;">(</span><span style="">Monad</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">MonadReader</span> <span style="">r</span> <span style="">m</span> <span style="color: red;">|</span> <span style="">m</span> <span style="color: red;">-&gt;</span> <span style="">r</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Retrieve the monad environment.</span>
+<span style="">&gt;</span>     <span style="">ask</span>   <span style="color: red;">::</span> <span style="">m</span> <span style="">r</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: green;">-- Execute the computation in the modified environment.</span>
+<span style="">&gt;</span>     <span style="">local</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: green;">-- Retrieves a function of the current environment.</span>
+<span style="">&gt;</span>     <span style="">reader</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span>
+</code></pre>
+<p> 
+An instance declaration for our <code>ReaderT</code> type:
+<p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">MonadReader</span> <span style="">r</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">r</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">ask</span>    <span style="color: red;">=</span> <span style="">readerAsk</span>
+<span style="">&gt;</span>     <span style="">local</span>  <span style="color: red;">=</span> <span style="">withReaderT</span>
+<span style="">&gt;</span>     <span style="">reader</span> <span style="color: red;">=</span> <span style="">readerReader</span>
+</code></pre>
+<p> 
+Now we can write fairly succinct code as follows. Use the <code>IO</code> monad as the inner monad in a <code>ReaderT</code>, with an <code>Int</code> environment and <code>String</code> result type.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">eg2</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">Int</span> <span style="">IO</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">eg2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Get the reader environment.</span>
+<span style="">&gt;</span>     <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">ask</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">Int</span> <span style="">IO</span> <span style="">Int</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: green;">-- Run an IO action; we have to use liftReaderT since we are currently</span>
+<span style="">&gt;</span>     <span style="color: green;">-- in the ReaderT monad, not the IO monad.</span>
+<span style="">&gt;</span>     <span style="">liftReaderT</span> <span style="">$</span> <span style="">print</span> <span style="">$</span> <span style="color: teal;">"I'm in the eg2 function and the environment is: "</span> <span style="">++</span> <span style="color: red;">(</span><span style="">show</span> <span style="">e</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: green;">-- Final return value, a string.</span>
+<span style="">&gt;</span>     <span style="">return</span> <span style="">$</span> <span style="color: teal;">"returned value: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">result</span> <span style="color: red;">&lt;-</span> <span style="">runReaderT</span> <span style="">eg2</span> <span class="hs-num">100</span>
+<span style="">&gt;</span> <span style="color: teal;">"I'm in the eg2 function and the environment is: 100"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">result</span>
+<span style="">&gt;</span> <span style="color: teal;">"returned value: 100"</span>
+</code></pre>
+<p> 
+All of the above is available from <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Reader.html">Control.Monad.Reader</a> and <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Trans.html">Control.Monad.Trans</a>.
+</p>
+
+
+
+
+
+<div class="references">
+
+</div>

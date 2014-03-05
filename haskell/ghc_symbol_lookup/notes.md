@@ -120,3 +120,12 @@ this does a lot of stuff, should read:
 
 http://hackage.haskell.org/package/buildwrapper-0.6.0/docs/src/Language-Haskell-BuildWrapper-GHCStorage.html
 
+
+
+http://www.haskell.org/pipermail/glasgow-haskell-users/2010-November/019578.html
+
+
+using renamed source is the key:
+
+http://www.haskell.org/pipermail/glasgow-haskell-users/2010-November/019598.html
+
