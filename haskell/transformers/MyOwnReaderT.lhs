@@ -12,6 +12,8 @@ for this post is available here: <a href="https://github.com/carlohamalainen/pla
 > hole = undefined
 > data Hole = Hole
 
+<h2> The Reader Monad </h2>
+
 <p> A <code>Reader</code> is a data type that encapsulates an
 environment. The <code>runReader</code> function takes an environment
 (a <code>Reader</code>) and runs it, producing the result of type
@@ -91,6 +93,7 @@ driven development</a>. </p>
 < ghci> runReader eg1'' 100
 < "hey, [100]"
 
+<h2> Reader Transformer </h2>
 
 <p> We'd like to use the <code>Reader</code> in conjunction with other monads, for example running <code>IO</code> actions but
 having access to the reader's environment. To do this we create a transformer, which we'll call <code>ReaderT</code>:
@@ -183,9 +186,9 @@ that we create a reader that returns <code>f r</code> instead of
 <p> An instance declaration for our <code>ReaderT</code> type: <p>
 
 > instance Monad m => MonadReader r (ReaderT r m) where
->     ask    = readerAsk
->     local  = withReaderT
->     reader = readerReader
+>     ask    = readerAsk    :: ReaderT r m r
+>     local  = withReaderT  :: (r -> r) -> ReaderT r m a -> ReaderT r m a
+>     reader = readerReader :: (r -> a) -> ReaderT r m a
 
 <p> Now we can write fairly succinct code as follows. Use the <code>IO</code> monad as the inner monad in a <code>ReaderT</code>,
 with an <code>Int</code> environment and <code>String</code> result type. </p>
@@ -210,6 +213,155 @@ with an <code>Int</code> environment and <code>String</code> result type. </p>
 
 <p> All of the above is available from <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Reader.html">Control.Monad.Reader</a>
 and <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Trans.html">Control.Monad.Trans</a>. </p>
+
+<h2> StateT, ReaderT, and ask </h2>
+
+<p> The <a href="FIXME">State</a> monad encapsulates a modifiable state. It has a transformer
+<code>StateT</code> as one would expect. Yet we are able to call <code>ask</code> inside
+a <code>StateT</code> monad. Here is an example: </p>
+
+< import Control.Monad.Reader
+< import Control.Monad.State
+<
+< inside0 :: ReaderT String IO Float
+< inside0 = do
+<     e <- ask :: ReaderT String IO String
+<
+<     liftIO $ putStrLn $ "inside0, e: " ++ show e
+<
+<     return 1.23
+<
+< inside1 :: StateT [Int] (ReaderT String IO) Float
+< inside1 = do
+<     e <- ask :: StateT [Int] (ReaderT String IO) String
+<     s <- get :: StateT [Int] (ReaderT String IO) [Int]
+<
+<     liftIO $ putStrLn $ "inside1, e: " ++ show e
+<     liftIO $ putStrLn $ "inside1, s: " ++ show s
+<
+<     put [1, 1, 1]
+<
+<     return 1.23
+<
+< run0 :: IO ()
+< run0 = do let layer1 = runReaderT inside0 "reader environment, hi"
+<
+<           result <- layer1
+<
+<           print $ "result: " ++ show result
+<
+< run1 :: IO ()
+< run1 = do let layer1 = runStateT inside1 [0]
+<               layer2 = runReaderT layer1 "reader environment, hi"
+<
+<           (result, finalState) <- layer2
+<
+<           print $ "final state: " ++ show finalState
+<
+<           print $ "result: " ++ show result
+
+
+<p> The function
+<code>inside0</code> has the <code>IO</code> monad nested inside a <code>Reader</code>, while
+</code>inside1</code> has a <code>StateT</code> with the <code>ReaderT</code> inside. Yet
+in both we can write <code>e <- ask</code>. </p>
+
+<p> Inspecting the types using <a href="FIXME">ghcmod-vim</a> we find that </p>
+
+<   -- in inside0
+<   e <- ask :: ReaderT String IO String
+<
+<   -- in inside1
+<   e <- ask :: StateT [Int] (ReaderT String IO) String
+
+<p> so there must be a type class that provides the <code>ask</code> function for
+<code>StateT</code>.
+
+<p> First, inspect the type of <code>ask</code> using ghci (here
+we are using the definitions from <code>Control.Monad.Reader</code>
+and <code>Control.Monad.State</code>, not the implementation in this
+file). </p>
+
+<pre>
+ghci> :t ask
+ask :: MonadReader r m => m r
+</pre>
+
+<p> So <code>StateT</code> must have a <code>MonadReader</code> instance. Confirm this with <code>:i</code>: </p>
+
+<pre>
+ghci> :i StateT
+(lots of stuff)
+instance MonadReader r m => MonadReader r (StateT s m)
+  -- Defined in `Control.Monad.Reader.Class'
+(lots of stuff)
+</pre>
+
+<p> Looking in <a href="FIXME">Control.Monad.Reader.Class</a> we find: </p>
+
+< instance MonadReader r m => MonadReader r (Lazy.StateT s m) where
+<     ask   = lift ask
+<     local = Lazy.mapStateT . local
+<     reader = lift . reader
+
+<p> The <code>lift</code> function comes from <a href="FIXME">Monad.Trans.Class</a>,
+and looking there we see: </p>
+
+< class MonadTrans t where
+<     -- | Lift a computation from the argument monad to the constructed monad.
+<     lift :: Monad m => m a -> t m a
+
+<p> So actually we are after the <code>MonaTrans</code> type
+class. Again looking at <code>:i</code> on <code>StateT</code> we see: </p>
+
+
+<pre>
+ghci> :i StateT
+instance MonadTrans (StateT s)
+(lots of stuff)
+  -- Defined in `Control.Monad.Trans.State.Lazy'
+(lots of stuff)
+</pre>
+
+<p> So off we go to <a href="FIXME">Control.Monad.Trans.State.Lazy</a> where we finally get the answer: </p>
+
+< instance MonadTrans (StateT s) where
+<     lift m = StateT $ \s -> do
+<         a <- m
+<         return (a, s)
+
+<p> This shows that for <code>StateT</code>, the <code>lift</code>
+function takes a monadic action and produces a state transformer that
+takes the current state, runs the action, and returns the result of
+the action along with the unmodified state. This makes sense in that
+the underlying action should not modify the state. (There are some
+<a href="FIXME">laws</a> that monad transformers must satisfy.) </p>
+
+<p> If we did not have the <code>MonadTrans</a> type class then we would have to embed
+the <code>ask</code> call manually: </p>
+
+< inside1' :: StateT [Int] (ReaderT String IO) Float
+< inside1' = do
+<     e <- StateT $ \s -> do a <- ask
+<                            return (a, s)
+<
+<     s <- get :: StateT [Int] (ReaderT String IO) [Int]
+<
+<     liftIO $ putStrLn $ "inside1, e: " ++ show e
+<     liftIO $ putStrLn $ "inside1, s: " ++ show s
+<
+<     put [1, 1, 1]
+<
+<   return 1.23
+
+<p> Obviously this is laborious and error-prone. In this case, Haskell's type class system lets
+us implement a few classes so that <code>ask</code>, <code>get</code>, <code>put</code>, etc, can be used seamlessly no matter which monad transformer we are in. </p>
+
+
+
+
+<a href="FIXME">Ask.hs</a>
+
 
 
 

@@ -17,6 +17,10 @@ Note to self on constructing a monad transformer. In a way this follows on from 
 <span style="">&gt;</span> <span style="">hole</span> <span style="color: red;">=</span> <span style="">undefined</span>
 <span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Hole</span> <span style="color: red;">=</span> <span style="">Hole</span>
 </code></pre>
+<h2> 
+The Reader Monad
+</h2>
+
 <p> 
 A <code>Reader</code> is a data type that encapsulates an environment. The <code>runReader</code> function takes an environment (a <code>Reader</code>) and runs it, producing the result of type <code>a</code>.
 </p>
@@ -112,6 +116,10 @@ Since <code>[]</code> is an instance of <code>Monad</code> we can also do things
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">ghci</span><span style="">&gt;</span> <span style="">runReader</span> <span style="">eg1''</span> <span class="hs-num">100</span>
 <span style="">&gt;</span> <span style="color: teal;">"hey, [100]"</span>
 </code></pre>
+<h2> 
+Reader Transformer
+</h2>
+
 <p> 
 <p>We’d like to use the <code>Reader</code> in conjunction with other monads, for example running <code>IO</code> actions but having access to the reader’s environment. To do this we create a transformer, which we’ll call <code>ReaderT</code>:</p>
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">newtype</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">ReaderT</span> <span style="color: red;">{</span> <span style="">runReaderT</span> <span style="color: red;">::</span> <span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">}</span>
@@ -203,9 +211,9 @@ An instance declaration for our <code>ReaderT</code> type:
 <p>
 
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">MonadReader</span> <span style="">r</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">r</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>     <span style="">ask</span>    <span style="color: red;">=</span> <span style="">readerAsk</span>
-<span style="">&gt;</span>     <span style="">local</span>  <span style="color: red;">=</span> <span style="">withReaderT</span>
-<span style="">&gt;</span>     <span style="">reader</span> <span style="color: red;">=</span> <span style="">readerReader</span>
+<span style="">&gt;</span>     <span style="">ask</span>    <span style="color: red;">=</span> <span style="">readerAsk</span>    <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">r</span>
+<span style="">&gt;</span>     <span style="">local</span>  <span style="color: red;">=</span> <span style="">withReaderT</span>  <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">reader</span> <span style="color: red;">=</span> <span style="">readerReader</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">ReaderT</span> <span style="">r</span> <span style="">m</span> <span style="">a</span>
 </code></pre>
 <p> 
 Now we can write fairly succinct code as follows. Use the <code>IO</code> monad as the inner monad in a <code>ReaderT</code>, with an <code>Int</code> environment and <code>String</code> result type.
@@ -233,10 +241,154 @@ Now we can write fairly succinct code as follows. Use the <code>IO</code> monad 
 All of the above is available from <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Reader.html">Control.Monad.Reader</a> and <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Trans.html">Control.Monad.Trans</a>.
 </p>
 
+<h2> 
+StateT, ReaderT, and ask
+</h2>
+
+<p> 
+The <a href="FIXME">State</a> monad encapsulates a modifiable state. It has a transformer <code>StateT</code> as one would expect. Yet we are able to call <code>ask</code> inside a <code>StateT</code> monad. Here is an example:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">Reader</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">State</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">inside0</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span> <span style="">Float</span>
+<span style="">&gt;</span> <span style="">inside0</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">ask</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span> <span style="">String</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"inside0, e: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">return</span> <span class="hs-num">1.23</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">inside1</span> <span style="color: red;">::</span> <span style="">StateT</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span><span style="color: red;">)</span> <span style="">Float</span>
+<span style="">&gt;</span> <span style="">inside1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">ask</span> <span style="color: red;">::</span> <span style="">StateT</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span><span style="color: red;">)</span> <span style="">String</span>
+<span style="">&gt;</span>     <span style="">s</span> <span style="color: red;">&lt;-</span> <span style="">get</span> <span style="color: red;">::</span> <span style="">StateT</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span><span style="color: red;">)</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"inside1, e: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+<span style="">&gt;</span>     <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"inside1, s: "</span> <span style="">++</span> <span style="">show</span> <span style="">s</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">put</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">return</span> <span class="hs-num">1.23</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">run0</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">run0</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">layer1</span> <span style="color: red;">=</span> <span style="">runReaderT</span> <span style="">inside0</span> <span style="color: teal;">"reader environment, hi"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>           <span style="">result</span> <span style="color: red;">&lt;-</span> <span style="">layer1</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>           <span style="">print</span> <span style="">$</span> <span style="color: teal;">"result: "</span> <span style="">++</span> <span style="">show</span> <span style="">result</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">run1</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">run1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">layer1</span> <span style="color: red;">=</span> <span style="">runStateT</span> <span style="">inside1</span> <span style="color: red;">[</span><span class="hs-num">0</span><span style="color: red;">]</span>
+<span style="">&gt;</span>               <span style="">layer2</span> <span style="color: red;">=</span> <span style="">runReaderT</span> <span style="">layer1</span> <span style="color: teal;">"reader environment, hi"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>           <span style="color: red;">(</span><span style="">result</span><span style="color: red;">,</span> <span style="">finalState</span><span style="color: red;">)</span> <span style="color: red;">&lt;-</span> <span style="">layer2</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>           <span style="">print</span> <span style="">$</span> <span style="color: teal;">"final state: "</span> <span style="">++</span> <span style="">show</span> <span style="">finalState</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>           <span style="">print</span> <span style="">$</span> <span style="color: teal;">"result: "</span> <span style="">++</span> <span style="">show</span> <span style="">result</span>
+</code></pre>
+<p> 
+The function <code>inside0</code> has the <code>IO</code> monad nested inside a <code>Reader</code>, while </code>inside1</code> has a <code>StateT</code> with the <code>ReaderT</code> inside. Yet in both we can write <code>e &lt;- ask</code>.
+</p>
+
+<p> 
+Inspecting the types using <a href="FIXME">ghcmod-vim</a> we find that
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span>   <span style="color: green;">-- in inside0</span>
+<span style="">&gt;</span>   <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">ask</span> <span style="color: red;">::</span> <span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span> <span style="">String</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- in inside1</span>
+<span style="">&gt;</span>   <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">ask</span> <span style="color: red;">::</span> <span style="">StateT</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span><span style="color: red;">)</span> <span style="">String</span>
+</code></pre>
+<p> 
+<p>so there must be a type class that provides the <code>ask</code> function for <code>StateT</code>.</p>
+<p> 
+First, inspect the type of <code>ask</code> using ghci (here we are using the definitions from <code>Control.Monad.Reader</code> and <code>Control.Monad.State</code>, not the implementation in this file).
+</p>
+
+<pre>
+ghci> :t ask
+ask :: MonadReader r m => m r
+</pre>
+
+<p> 
+So <code>StateT</code> must have a <code>MonadReader</code> instance. Confirm this with <code>:i</code>:
+</p>
+
+<pre>
+ghci> :i StateT
+(lots of stuff)
+instance MonadReader r m => MonadReader r (StateT s m)
+  -- Defined in `Control.Monad.Reader.Class'
+(lots of stuff)
+</pre>
+
+<p> 
+Looking in <a href="FIXME">Control.Monad.Reader.Class</a> we find:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">MonadReader</span> <span style="">r</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">MonadReader</span> <span style="">r</span> <span style="color: red;">(</span><span style="">Lazy</span><span style="">.</span><span style="">StateT</span> <span style="">s</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">ask</span>   <span style="color: red;">=</span> <span style="">lift</span> <span style="">ask</span>
+<span style="">&gt;</span>     <span style="">local</span> <span style="color: red;">=</span> <span style="">Lazy</span><span style="">.</span><span style="">mapStateT</span> <span style="">.</span> <span style="">local</span>
+<span style="">&gt;</span>     <span style="">reader</span> <span style="color: red;">=</span> <span style="">lift</span> <span style="">.</span> <span style="">reader</span>
+</code></pre>
+<p> 
+The <code>lift</code> function comes from <a href="FIXME">Monad.Trans.Class</a>, and looking there we see:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">MonadTrans</span> <span style="">t</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="color: green;">-- | Lift a computation from the argument monad to the constructed monad.</span>
+<span style="">&gt;</span>     <span style="">lift</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">t</span> <span style="">m</span> <span style="">a</span>
+</code></pre>
+<p> 
+So actually we are after the <code>MonaTrans</code> type class. Again looking at <code>:i</code> on <code>StateT</code> we see:
+</p>
 
 
+<pre>
+ghci> :i StateT
+instance MonadTrans (StateT s)
+(lots of stuff)
+  -- Defined in `Control.Monad.Trans.State.Lazy'
+(lots of stuff)
+</pre>
 
+<p> 
+So off we go to <a href="FIXME">Control.Monad.Trans.State.Lazy</a> where we finally get the answer:
+</p>
 
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">MonadTrans</span> <span style="color: red;">(</span><span style="">StateT</span> <span style="">s</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">lift</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">StateT</span> <span style="">$</span> <span style="color: red;">\</span><span style="">s</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>         <span style="">a</span> <span style="color: red;">&lt;-</span> <span style="">m</span>
+<span style="">&gt;</span>         <span style="">return</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">s</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+This shows that for <code>StateT</code>, the <code>lift</code> function takes a monadic action and produces a state transformer that takes the current state, runs the action, and returns the result of the action along with the unmodified state. This makes sense in that the underlying action should not modify the state. (There are some <a href="FIXME">laws</a> that monad transformers must satisfy.)
+</p>
+
+<p>instance (MonadIO m) =&gt; MonadIO (StateT s m) where liftIO = lift . liftIO</p>
+<p>The ‘lift’ function takes a monadic action ‘m’, and creates a StateT that takes an incoming state ‘s’, runs the action producing a value ‘a’, and returns that value with the state unchanged.</p>
+<p> 
+If we did not have the <code>MonadTrans</a> type class then we would have to embed the <code>ask</code> call manually:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">inside1'</span> <span style="color: red;">::</span> <span style="">StateT</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span><span style="color: red;">)</span> <span style="">Float</span>
+<span style="">&gt;</span> <span style="">inside1'</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">e</span> <span style="color: red;">&lt;-</span> <span style="">StateT</span> <span style="">$</span> <span style="color: red;">\</span><span style="">s</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">a</span> <span style="color: red;">&lt;-</span> <span style="">ask</span>
+<span style="">&gt;</span>                            <span style="">return</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">s</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">s</span> <span style="color: red;">&lt;-</span> <span style="">get</span> <span style="color: red;">::</span> <span style="">StateT</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">ReaderT</span> <span style="">String</span> <span style="">IO</span><span style="color: red;">)</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"inside1, e: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+<span style="">&gt;</span>     <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"inside1, s: "</span> <span style="">++</span> <span style="">show</span> <span style="">s</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">put</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">]</span>
+</code></pre>
+<pre><code>return 1.23</code></pre>
+<p><a href="FIXME">Ask.hs</a></p>
 <div class="references">
 
 </div>
