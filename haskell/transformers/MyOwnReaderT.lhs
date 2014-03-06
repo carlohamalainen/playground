@@ -216,9 +216,9 @@ and <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Tra
 
 <h2> StateT, ReaderT, and ask </h2>
 
-<p> The <a href="FIXME">State</a> monad encapsulates a modifiable state. It has a transformer
+<p> The <a href="http://www.haskell.org/haskellwiki/State_Monad">State</a> monad encapsulates a modifiable state. It has a transformer
 <code>StateT</code> as one would expect. Yet we are able to call <code>ask</code> inside
-a <code>StateT</code> monad. Here is an example: </p>
+a <code>StateT</code> monad. Here is an example (the raw code is <a href="https://github.com/carlohamalainen/playground/blob/master/haskell/transformers/Ask.hs">here</a>): </p>
 
 < import Control.Monad.Reader
 < import Control.Monad.State
@@ -266,7 +266,7 @@ a <code>StateT</code> monad. Here is an example: </p>
 </code>inside1</code> has a <code>StateT</code> with the <code>ReaderT</code> inside. Yet
 in both we can write <code>e <- ask</code>. </p>
 
-<p> Inspecting the types using <a href="FIXME">ghcmod-vim</a> we find that </p>
+<p> Inspecting the types using <a href="https://github.com/eagletmt/ghcmod-vim">ghcmod-vim</a> we find that </p>
 
 <   -- in inside0
 <   e <- ask :: ReaderT String IO String
@@ -297,14 +297,14 @@ instance MonadReader r m => MonadReader r (StateT s m)
 (lots of stuff)
 </pre>
 
-<p> Looking in <a href="FIXME">Control.Monad.Reader.Class</a> we find: </p>
+<p> Looking in <a href="http://hackage.haskell.org/package/mtl-2.1.2/docs/Control-Monad-Reader-Class.html">Control.Monad.Reader.Class</a> we find: </p>
 
 < instance MonadReader r m => MonadReader r (Lazy.StateT s m) where
 <     ask   = lift ask
 <     local = Lazy.mapStateT . local
 <     reader = lift . reader
 
-<p> The <code>lift</code> function comes from <a href="FIXME">Monad.Trans.Class</a>,
+<p> The <code>lift</code> function comes from <a href="https://hackage.haskell.org/package/transformers-0.3.0.0/docs/Control-Monad-Trans-Class.html">Monad.Trans.Class</a>,
 and looking there we see: </p>
 
 < class MonadTrans t where
@@ -323,7 +323,7 @@ instance MonadTrans (StateT s)
 (lots of stuff)
 </pre>
 
-<p> So off we go to <a href="FIXME">Control.Monad.Trans.State.Lazy</a> where we finally get the answer: </p>
+<p> So off we go to <a href="https://hackage.haskell.org/package/transformers-0.3.0.0/docs/Control-Monad-Trans-State-Lazy.html">Control.Monad.Trans.State.Lazy</a> where we finally get the answer: </p>
 
 < instance MonadTrans (StateT s) where
 <     lift m = StateT $ \s -> do
@@ -335,9 +335,9 @@ function takes a monadic action and produces a state transformer that
 takes the current state, runs the action, and returns the result of
 the action along with the unmodified state. This makes sense in that
 the underlying action should not modify the state. (There are some
-<a href="FIXME">laws</a> that monad transformers must satisfy.) </p>
+<a href="https://hackage.haskell.org/package/transformers-0.3.0.0/docs/Control-Monad-Trans-Class.html">laws</a> that monad transformers must satisfy.) </p>
 
-<p> If we did not have the <code>MonadTrans</a> type class then we would have to embed
+<p> If we did not have the <code>MonadTrans</code> type class then we would have to embed
 the <code>ask</code> call manually: </p>
 
 < inside1' :: StateT [Int] (ReaderT String IO) Float
@@ -357,10 +357,12 @@ the <code>ask</code> call manually: </p>
 <p> Obviously this is laborious and error-prone. In this case, Haskell's type class system lets
 us implement a few classes so that <code>ask</code>, <code>get</code>, <code>put</code>, etc, can be used seamlessly no matter which monad transformer we are in. </p>
 
+<p> The downside is that reading Haskell code can be nontrivial. In our case we had to follow
+a trail through a few files to see where <code>ask</code> was actually implemented, and finding
+the right definition relied on us being able to infer the correct types of certain sub-expressions. </p>
 
+<p> Personally I am finding more and more that plain vim and ghci does not cut it for Haskell development, and something richer like <a href="https://github.com/eagletmt/ghcmod-vim">ghcmod-vim</a> is a real necessity. Shameless self plug: <a href="https://github.com/carlohamalainen/ghc-imported-from">ghc-imported-from</a> is also very useful :-) </p>
 
-
-<a href="FIXME">Ask.hs</a>
 
 
 
