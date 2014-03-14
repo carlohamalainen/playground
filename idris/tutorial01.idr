@@ -141,6 +141,8 @@ filter' _ [] = (_ ** [])
 
 -- The tutorial has this on one line, doesn't compile.
 -- Also, what's this pipe (vertical bar) doing? Like a guard?
+-- FIXME Answer is in 7.2, the 'with' lets us match on an intermediate
+-- value, so (filter p xs) === (_ ** tail).
 filter' p (x::xs) with (filter p xs)
     | (_ ** tail) =
           if p x then
@@ -177,9 +179,142 @@ fred : Person'
 fred = record { name = "Fred" } (MkPerson' "Bob" 34)
 
 
+instance Eq Person' where
+  (MkPerson' n1 a1) == (MkPerson' n2 a2) = n1 == n2 && a1 == a2
+
+personEq1 : Bool
+personEq1 = MkPerson' "Bob" 42 == MkPerson' "Bob" 42
+
+
+madd : Num a => Maybe a -> Maybe a -> Maybe a
+madd x y = do x' <- x
+              y' <- y
+              return $ x' + y'
+
+-- Maybe is an instance of MonadPlus (mplus, mzero)...
+madd' : Num a => Maybe a -> Maybe a -> Maybe a
+madd' x y = [x' + y' | x' <- x, y' <- y]
 
 
 
+appVal3 : Maybe Int
+appVal3 = pure 3
 
+appVal4 : Maybe Int
+appVal4 = pure 4
+
+-- idiom brackets, alternative to the <$> thing...
+appValResult : Maybe Int
+appValResult = [| appVal3 + appVal4 |]
+
+-- The usual <$> stuff, as with Haskell's Applicative.
+appValResult' : Maybe Int
+appValResult' = pure (+) <$> appVal3 <$> appVal4
+
+
+-- 4.4.1 error-handling interpreter
+
+data Expr = Var String
+          | Val Int
+          | Add Expr Expr
+
+-- list of variable to int bindings, can fail.
+data Eval : Type -> Type where
+  MkEval : (List (String, Int) -> Maybe a) -> Eval a
+
+
+fetch : String -> Eval Int
+fetch x = MkEval (\e => fetchVal e) where
+  fetchVal : List (String, Int) -> Maybe Int
+  fetchVal [] = Nothing
+  fetchVal ((v, val) :: xs) = if x == v
+                                 then Just val
+                                 else fetchVal xs
+
+
+-- FIXME Functor defines map, not fmap, in the current prelude/Prelude/Functor.idr
+instance Functor Eval where
+  map f (MkEval g) = MkEval (\e => map f (g e))
+
+instance Applicative Eval where
+  pure x = MkEval (\_ => Just x)
+
+  (<$>) (MkEval f) (MkEval g) = MkEval (\x => app (f x) (g x)) where
+    app : Maybe (a -> b) -> Maybe a -> Maybe b
+    app (Just fx) (Just gx) = Just (fx gx)
+    app _         _         = Nothing
+
+
+-- eval now using idiomatic application brackets:
+eval : Expr -> Eval Int
+eval (Var x)    = fetch x
+eval (Val x)    = [| x |]
+eval (Add x y)  = [| eval x + eval y |]
+
+-- Using applicative style:
+eval' : Expr -> Eval Int
+eval' (Var x)    = fetch x
+eval' (Val x)    = pure x
+eval' (Add x y)  = pure (+) <$> eval' x <$> eval' y
+
+
+runEval : List (String, Int) -> Expr -> Maybe Int
+runEval env e = envFn env
+    where matchFn : Eval Int -> (List (String, Int) -> Maybe Int)
+          matchFn (MkEval f) = f
+
+          envFn : List (String, Int) -> Maybe Int
+          envFn = matchFn $ eval e
+
+-- The pattern matching on MkEval is painful, can use a case expression
+-- to simplify this (as per the tutorial):
+runEval' : List (String, Int) -> Expr -> Maybe Int
+runEval' env e = case eval e of MkEval envFn => envFn env
+
+egEval1 : Maybe Int
+egEval1 = runEval [("x", 1)] (Var "x")
+
+
+-- 4.5 Named instances, nice.
+
+-- TODO: modules, namespaces, etc.
+
+-- TODO 7.2, parity and natToBin.
+
+-- TODO proofs by contradiction, FalseElim.
+
+
+-- Equality is a congruence...
+cong' : {f : t -> u} -> (a = b) -> f a = f b
+cong' refl = refl
+
+-- prove that plus Z n = n
+plusReduces : (n:Nat) -> plus Z n = n
+plusReduces n = refl
+
+-- prove that n = plus n Z
+-- plusReducesZ : (n:Nat) -> n = plus n Z
+-- plusReducesZ Z = refl
+-- plusReducesZ (S k) = ?plusReducesZ_rhs_2
+
+-- doing it interactively...
+
+plusReducesZ' : (n:Nat) -> n = plus Z n
+plusReducesZ' Z = ?rhs_Z
+plusReducesZ' (S k) = let ih = plusReducesZ' k in ?rhs_Z_S
+
+
+
+---------- Proofs ----------
+
+Tutorial01.rhs_Z_S = proof
+  intros
+  compute
+  rewrite ih
+  trivial 
+
+
+Tutorial01.rhs_Z = proof
+  refine refl
 
 

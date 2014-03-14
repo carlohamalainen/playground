@@ -24,6 +24,11 @@ myVect1 = [9]
 myVect2 : Vect (S $ S Z) Int
 myVect2 = [9, 8]
 
+blahha : (n : Nat) -> Bool
+blahha Z = True
+blahha (S k) = blahha k
+
+
 main : IO ();
 main = do -- putStr "What is your name? "
           -- name <- getLine
