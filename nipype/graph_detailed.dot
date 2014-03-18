@@ -1,0 +1,10 @@
+digraph structs {
+node [shape=record];
+nipype_demohello [label="{IN}|{ hello | utility |  }|{OUT|<outoutfile> out_file}"];
+nipype_demoworldaIa1 [label="{IN|<ininfile> in_file}|{ a1 | utility | world.aI }|{OUT}"];
+nipype_demoworldaIa2 [label="{IN|<ininfile> in_file}|{ a2 | utility | world.aI }|{OUT}"];
+nipype_demoworldaIa0 [label="{IN|<ininfile> in_file}|{ a0 | utility | world.aI }|{OUT}"];
+nipype_demohello:outoutfile:e -> nipype_demoworldaIa0:ininfile:w;
+nipype_demohello:outoutfile:e -> nipype_demoworldaIa1:ininfile:w;
+nipype_demohello:outoutfile:e -> nipype_demoworldaIa2:ininfile:w;
+}
