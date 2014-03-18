@@ -1,4 +1,4 @@
-Nipype encodes parameters (see the ```iterables``` property in helloiterables.py, e.g.
+Nipype encodes parameters (see the ```iterables``` property in helloiterables.py), e.g.
 
     140318-16:15:43,549 workflow INFO:
          ['check', 'execution', 'logging']
@@ -48,7 +48,7 @@ As a result of ```world.iterables = ('some_parameter', [1.0/3.0, 1.0/3.0 + 10e-1
 
 ![graph_detailed.dot.png](https://github.com/carlohamalainen/playground/raw/master/nipype/graph_detailed.dot.png)
 
-In comparison, [Laboratin]](https://github.com/lucasdicioccio/laborantin-hs) has a ```find``` command. Example from its README:
+In comparison, [Laboratin](https://github.com/lucasdicioccio/laborantin-hs) has a ```find``` command. Example from its README:
 
     Then find where experiments results are located with: `./my-experiment find`.
 
