@@ -1,5 +1,9 @@
 module Tutorial01
 
+testblah : List a -> Int
+testblah [] = 0
+testblah (_ :: xs) = 1 + testblah xs
+
 foo : Int -> Int
 foo x = case isLT of
             Yes => x*2
@@ -302,8 +306,6 @@ plusReduces n = refl
 plusReducesZ' : (n:Nat) -> n = plus Z n
 plusReducesZ' Z = ?rhs_Z
 plusReducesZ' (S k) = let ih = plusReducesZ' k in ?rhs_Z_S
-
-
 
 ---------- Proofs ----------
 
