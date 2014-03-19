@@ -1,0 +1,6 @@
+digraph nipype_demo{
+  label="nipype_demo";
+  nipype_demo_hello[label="hello (utility)"];
+  nipype_demo_world[label="world (utility)", style=filled, colorscheme=greys7 color=2];
+  nipype_demo_hello -> nipype_demo_world;
+}
