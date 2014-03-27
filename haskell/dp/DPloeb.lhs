@@ -1,4 +1,5 @@
-<p> Note to self: solving a dynamic programming problem using <a href="http://carlo-hamalainen.net/blog/2013/11/28/note-to-self-loeb-and-moeb">löb</a>. </p>
+<p> Note to self: solving a dynamic programming problem using <a href="http://carlo-hamalainen.net/blog/2013/11/28/note-to-self-loeb-and-moeb">löb</a>. Literate Haskell
+source for this post is here: <a href="https://github.com/carlohamalainen/playground/blob/master/haskell/dp/DPloeb.lhs">DPloeb.lhs</a>. </p>
 
 > module DPloeb where
 
