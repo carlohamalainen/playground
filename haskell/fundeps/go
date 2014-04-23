@@ -1,0 +1,6 @@
+#!/bin/bash
+
+for f in Fundeps
+do
+    cat ../literate_template/header.html > ${f}.html; BlogLiterately ${f}.lhs >> ${f}.html
+done

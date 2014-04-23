@@ -1,0 +1,136 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p> 
+<p>Suppose we have two datatypes, <code>OptBool</code> and <code>OptFile</code> for storing boolean and file path options. Perhaps this might be for a program that provides an interface to legacy command line applications.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE MultiParamTypeClasses  #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE TypeSynonymInstances   #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE FlexibleInstances      #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE FunctionalDependencies #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Fundep</span> <span style="color: blue; font-weight: bold;">where</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">OptBool</span> <span style="color: red;">=</span> <span style="">OptBool</span> <span style="color: red;">{</span> <span style="">optBoolDesc</span>   <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span>                        <span style="color: red;">,</span> <span style="">optBoolValue</span>  <span style="color: red;">::</span> <span style="">Bool</span>
+<span style="">&gt;</span>                        <span style="color: red;">}</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">OptFile</span> <span style="color: red;">=</span> <span style="">OptFile</span> <span style="color: red;">{</span> <span style="">optFileDesc</span> <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span>                        <span style="color: red;">,</span> <span style="">optFileValue</span> <span style="color: red;">::</span> <span style="">FilePath</span>
+<span style="">&gt;</span>                        <span style="color: red;">}</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<p> 
+We’d like to be able to set the value of an option without having to specify the record name, so instead of
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optBoolValue</span> <span style="color: red;">=</span> <span style="">True</span> <span style="color: red;">}</span>
+</code></pre>
+<p> 
+we want to write
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">setValue</span> <span style="">opt</span> <span style="">True</span>
+</code></pre>
+<p> 
+As a first attempt we make a type class <code>Option</code>:, where we have enabled <code>MultiParamTypeClasses</code> because the type signature for <code>setValue</code> has to refer to the option, of type <code>a</code>, and the value of type <code>b</code>. We also enable <code>TypeSynonymInstances</code> and <code>FlexibleInstances</code> since <code>FilePath</code> is a type synonym.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">Option</span> <span style="">a</span> <span style="">b</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">setDesc</span>   <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">setValue</span>  <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+</code></pre>
+<p> 
+Instance declarations:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Option</span> <span style="">OptBool</span> <span style="">Bool</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">setDesc</span> <span style="">opt</span> <span style="">d</span>  <span style="color: red;">=</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optBoolDesc</span>  <span style="color: red;">=</span> <span style="">d</span> <span style="color: red;">}</span>
+<span style="">&gt;</span>     <span style="">setValue</span> <span style="">opt</span> <span style="">b</span> <span style="color: red;">=</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optBoolValue</span> <span style="color: red;">=</span> <span style="">b</span> <span style="color: red;">}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Option</span> <span style="">OptFile</span> <span style="">FilePath</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">setDesc</span> <span style="">opt</span> <span style="">d</span>  <span style="color: red;">=</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optFileDesc</span>  <span style="color: red;">=</span> <span style="">d</span> <span style="color: red;">}</span>
+<span style="">&gt;</span>     <span style="">setValue</span> <span style="">opt</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optFileValue</span> <span style="color: red;">=</span> <span style="">f</span> <span style="color: red;">}</span>
+</code></pre>
+<p> 
+All seems well but the following code doesn’t compile:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">opt1'</span> <span style="color: red;">=</span> <span style="">setDesc</span> <span style="color: red;">(</span><span style="">OptBool</span> <span style="color: teal;">"bool"</span> <span style="">True</span><span style="color: red;">)</span> <span style="color: teal;">"boolean option"</span>
+</code></pre>
+<p> 
+with the error message
+</p>
+
+<pre>
+    No instance for (Option OptBool b1) arising from a use of `setDesc'
+    The type variable `b1' is ambiguous
+    Possible fix: add a type signature that fixes these type variable(s)
+    Note: there is a potential instance available:
+      instance Option OptBool Bool -- Defined at Fundeps.lhs:40:12
+    Possible fix: add an instance declaration for (Option OptBool b1)
+    In the expression: setDesc (OptBool "bool" True) "boolean option"
+    In an equation for opt1':
+        opt1' = setDesc (OptBool "bool" True) "boolean option"
+</pre>
+
+<p> 
+The problem is that both <code>a</code> and <code>b</code> in the class declaration are free variables, but really this is not the case. The trick is to enable the <code>FunctionalDependencies</code> language extension, and then specify that the type <code>a</code> in the class declaration for <code>Option</code> implies the type <code>b</code>. This makes sense if you think about the type of <code>setValue</code>. Once we know the type of the first parameter, we then know the type of the value field (assuming that the instance declaraion uses <code>OptBoolValue</code> or <code>optFileValue</code> or whatever).
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">Option</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">|</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">setDesc</span>   <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">setValue</span>  <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+</code></pre>
+<p> 
+Now this is ok:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">opt1'</span> <span style="color: red;">::</span> <span style="">OptBool</span>
+<span style="">&gt;</span> <span style="">opt1'</span> <span style="color: red;">=</span> <span style="">setDesc</span> <span style="color: red;">(</span><span style="">OptBool</span> <span style="color: teal;">"bool"</span> <span style="">True</span><span style="color: red;">)</span> <span style="color: teal;">"boolean option"</span>
+</code></pre>
+<p> 
+<p>As a final note, writing the implication <code>b -&gt; a</code> as below</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">Option</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">|</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">setDesc</span>   <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">setValue</span>  <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+</code></pre>
+<p> 
+restricts us unnecessarily. If we had another type with a boolean value field,
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">OptBool'</span> <span style="color: red;">=</span> <span style="">OptBool'</span> <span style="color: red;">{</span> <span style="">optBoolDesc'</span>  <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span>                          <span style="color: red;">,</span> <span style="">optBoolValue'</span> <span style="color: red;">::</span> <span style="">Bool</span>
+<span style="">&gt;</span>                          <span style="color: red;">}</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Option</span> <span style="">OptBool'</span> <span style="">Bool</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">setDesc</span> <span style="">opt</span> <span style="">d</span>  <span style="color: red;">=</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optBoolDesc'</span>  <span style="color: red;">=</span> <span style="">d</span> <span style="color: red;">}</span>
+<span style="">&gt;</span>     <span style="">setValue</span> <span style="">opt</span> <span style="">b</span> <span style="color: red;">=</span> <span style="">opt</span> <span style="color: red;">{</span> <span style="">optBoolValue'</span> <span style="color: red;">=</span> <span style="">b</span> <span style="color: red;">}</span>
+</code></pre>
+<p> 
+then this code would not compile
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">opt1''</span> <span style="color: red;">::</span> <span style="">OptBool'</span>
+<span style="">&gt;</span> <span style="">opt1''</span> <span style="color: red;">=</span> <span style="">setDesc</span> <span style="color: red;">(</span><span style="">OptBool'</span> <span style="color: teal;">"bool"</span> <span style="">True</span><span style="color: red;">)</span> <span style="color: teal;">"boolean option"</span>
+</code></pre>
+<p> 
+due to
+</p>
+
+<pre>
+    Functional dependencies conflict between instance declarations:
+      instance Option OptBool Bool -- Defined at Fundeps.lhs:41:12
+      instance Option OptBool' Bool -- Defined at Fundeps.lhs:91:12
+</pre>
+
+<p> 
+In contrast the implication <code>a -&gt; b</code> means that, for example, the type <code>OptBool</code> implies the type <code>Bool</code>.
+</p>
+
+
+
+<div class="references">
+
+</div>
