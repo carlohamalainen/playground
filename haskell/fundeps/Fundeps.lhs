@@ -121,3 +121,4 @@ or whatever). </p>
 <p> In contrast the implication <code>a -> b</code> means that, for example,
 the type <code>OptBool</code> implies the type <code>Bool</code>. </p>
 
+<p> Literate Haskell source for this blog post is available here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/fundeps">https://github.com/carlohamalainen/playground/tree/master/haskell/fundeps</a>. </p>
