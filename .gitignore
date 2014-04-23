@@ -1,3 +1,7 @@
 *.ibc
 *.idr~
 nipype/nipype_demo/*
+
+haskell/TH/.cabal-sandbox/*
+haskell/TH/cabal.sandbox.config
+haskell/TH/dist/*
