@@ -133,6 +133,6 @@ equivalent to the <code>CircleODE</code> class above. </p>
 <p> Literate Haskell source for this post is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/java-defun">https://github.com/carlohamalainen/playground/tree/master/haskell/java-defun</a>. </p>
 
 
+<br><br><br>
 
-
-
+<p><center> <a href="http://www.howtogeek.com/123403/the-world-as-seen-by-an-object-oriented-programmer-comic/"><img src="http://carlo-hamalainen.net/stuff/world_according_to_OO_programmer.jpg"></a> </center></p> 
