@@ -130,7 +130,7 @@ equivalent to the <code>CircleODE</code> class above. </p>
  </ul> </p>
 
 
-
+<p> Literate Haskell source for this post is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/java-defun">https://github.com/carlohamalainen/playground/tree/master/haskell/java-defun</a>. </p>
 
 
 
