@@ -294,3 +294,8 @@ is encoded in the type system</i>. </p>
 <li> <a href="http://www.youtube.com/watch?v=fVBck2Zngjo">Idris: Type safe printf</a>, screencast by <a href="https://twitter.com/puffnfresh">Brian McKenna</a>. A similar sort of problem: printf format strings can be incorrectly specified, resulting in run-time exceptions in Haskell. Here, Brian shows how to make a type-safe printf function in Idris. </li>
 
 </ul>
+
+<p> Literate source for this post: <a href="https://github.com/carlohamalainen/playground/blob/master/disjoint-haskell-vs-idris/OptionsInHaskell.lhs">OptionsInHaskell.lhs</a>. </p>
+
+<p> Idris source: <a href="https://github.com/carlohamalainen/playground/blob/master/disjoint-haskell-vs-idris/OptionsInIdris.idr">OptionsInIdris.idr</a>. </p>
+
