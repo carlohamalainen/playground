@@ -238,11 +238,13 @@ the actual value <code>ValidOptionList opts</code>. Due to the definition of <co
 that <code>notclash opts xors</code> must evaluate to <code>NotClashing</code>. Hopefully this makes it clear why the
 data types <code>ClashValue</code> and <code>IsNotClashing</code> were needed. </p>
 
-< data ValidOptionList : OptionList -> Type where
-<   MkValidOptionList : {default Ok prf : IsNotClashing (notclash opts xors)}
-<                    -> WrappedOptionList opts
-<                    -> XorLists xors
-<                    -> ValidOptionList opts
+<pre>
+data ValidOptionList : OptionList -> Type where
+  MkValidOptionList : {default Ok prf : IsNotClashing (notclash opts xors)}
+                   -> WrappedOptionList opts
+                   -> XorLists xors
+                   -> ValidOptionList opts
+</pre>
 
 <p> Finally, the <code>runProgram</code> function takes a path to an executable and a valid list of options. <i>The fact that the list of options is valid
 is encoded in the type system</i>. </p>

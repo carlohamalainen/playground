@@ -257,12 +257,14 @@ Example values, used later:
 The heart of the solution is the <code>ValidOptionList</code> data type. We take an option list and an xor list and, if a proof can be constructed for the value <code>Ok</code> using the expression <code>IsNotClashing (notclash opts xors)</code>, then we produce the actual value <code>ValidOptionList opts</code>. Due to the definition of <code>Ok</code>, this condition means that <code>notclash opts xors</code> must evaluate to <code>NotClashing</code>. Hopefully this makes it clear why the data types <code>ClashValue</code> and <code>IsNotClashing</code> were needed.
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">ValidOptionList</span> <span style="">:</span> <span style="">OptionList</span> <span style="color: red;">-&gt;</span> <span style="">Type</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>   <span style="">MkValidOptionList</span> <span style="">:</span> <span style="color: red;">{</span><span style="color: blue; font-weight: bold;">default</span> <span style="">Ok</span> <span style="">prf</span> <span style="">:</span> <span style="">IsNotClashing</span> <span style="color: red;">(</span><span style="">notclash</span> <span style="">opts</span> <span style="">xors</span><span style="color: red;">)</span><span style="color: red;">}</span>
-<span style="">&gt;</span>                    <span style="color: red;">-&gt;</span> <span style="">WrappedOptionList</span> <span style="">opts</span>
-<span style="">&gt;</span>                    <span style="color: red;">-&gt;</span> <span style="">XorLists</span> <span style="">xors</span>
-<span style="">&gt;</span>                    <span style="color: red;">-&gt;</span> <span style="">ValidOptionList</span> <span style="">opts</span>
-</code></pre>
+<pre>
+data ValidOptionList : OptionList -> Type where
+  MkValidOptionList : {default Ok prf : IsNotClashing (notclash opts xors)}
+                   -> WrappedOptionList opts
+                   -> XorLists xors
+                   -> ValidOptionList opts
+</pre>
+
 <p> 
 Finally, the <code>runProgram</code> function takes a path to an executable and a valid list of options. <i>The fact that the list of options is valid is encoded in the type system</i>.
 </p>
