@@ -149,7 +149,7 @@ and xor lists: [ [ MkOption {optDesc = "Value of Foo.", optArgStr = "-foo", optV
 
 <p> I'm not sure if we can make this a compile time error in Haskell, so I'll turn instead to Idris, where can exploit dependent types and other nice things. </p>
 
-<p> First define an option data type, the quality instance, and a few examples: </p>
+<p> First define an option data type, the equality instance, and a few examples: </p>
 
 < module Other
 <
