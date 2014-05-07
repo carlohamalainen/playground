@@ -5,3 +5,8 @@ nipype/nipype_demo/*
 haskell/TH/.cabal-sandbox/*
 haskell/TH/cabal.sandbox.config
 haskell/TH/dist/*
+
+talk-template/.cabal-sandbox/*
+talk-template/cabal.sandbox.config
+talk-template/dist/*
+talk-template/reveal.js/*
