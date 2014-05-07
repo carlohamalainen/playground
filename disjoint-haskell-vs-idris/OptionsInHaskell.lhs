@@ -151,85 +151,79 @@ and xor lists: [ [ MkOption {optDesc = "Value of Foo.", optArgStr = "-foo", optV
 
 <p> First define an option data type, the equality instance, and a few examples: </p>
 
-< module Other
-<
-< %default total
-<
-< data Option = MkOption String String Int
-<
-< instance Show Option where
-<   show (MkOption x y z) = "Option " ++ show x ++ " " ++ show y ++ " " ++ show z
-<
-< instance Eq Option where
-<   (MkOption _ a _) == (MkOption _ a' _) = a == a'
-<
-< opt1 : Option
-< opt1 = MkOption "Value of Foo." "-foo" 34
-<
-< opt2 : Option
-< opt2 = MkOption "Do bar." "-bar" 99
-<
-< opt3 : Option
-< opt3 = MkOption "Blah." "-blah" 0
+<pre>
+module OptionsInIdris
+
+%default total
+
+data Option = MkOption String String Int
+
+instance Show Option where
+  show (MkOption x y z) = "Option " ++ show x ++ " " ++ show y ++ " " ++ show z
+
+instance Eq Option where
+  (MkOption _ a _) == (MkOption _ a' _) = a == a'
+
+opt1 : Option
+opt1 = MkOption "Value of Foo." "-foo" 34
+
+opt2 : Option
+opt2 = MkOption "Do bar." "-bar" 99
+
+opt3 : Option
+opt3 = MkOption "Blah." "-blah" 0
+</pre>
 
 <p> Next we need to encode <i>in the type system</i> the result of an option list clashing or not: </p>
 
-< data ClashValue = Clashing | NotClashing
+<pre>
+data ClashValue = Clashing | NotClashing
+</pre>
 
 <p> Checking if an option list has a clash is basically the same as in Haskell except that we return
 a <code>ClashValue</code> instead of a <code>Bool</code>: </p>
 
-< notclash : List Option -> List (List Option) -> ClashValue
-< notclash opts xors = if (any (\x => length (intersect opts x) >= 2) xors)
-<                            then Clashing
-<                            else NotClashing
-<    where intersect : Eq a => List a -> List a -> List a
-<          intersect [] _ = []
-<          intersect (x :: xs) ys = if x `elem` ys then x :: intersect xs ys
-<                                                  else intersect xs ys
+<pre>
+notclash : List Option -> List (List Option) -> ClashValue
+notclash opts xors = if (any (\x => length (intersect opts x) >= 2) xors)
+                           then Clashing
+                           else NotClashing
+   where intersect : Eq a => List a -> List a -> List a
+         intersect [] _ = []
+         intersect (x :: xs) ys = if x `elem` ys then x :: intersect xs ys
+                                                 else intersect xs ys
+</pre>
 
 <p> Next, the tricky bit. We create a data type <code>IsNotClashing</code> which has
 only one constructor, called <code>Ok</code>, that produces a value <code>IsNotClashing NotClashing</code>.
 <i>There is no way to produce the value <code>IsNotClashing Clashing</code></i>.
 
-< data IsNotClashing : ClashValue -> Type where
-<   Ok : IsNotClashing NotClashing
-
-<p> I'm a bit hazy on the details of the next chunk of code, as I wasn't able to get Idris to accept my
-default proof clause in the <code>MkValidOptionList</code> data constructor. We aren't really doing anything here apart from
-introducing two type synonyms <code>OptionList</code> and <code>OptionListList</code>, and a wrapped version of each. </p>
-
-< OptionList : Type
-< OptionList = List Option
-<
-< OptionListList : Type
-< OptionListList = List (List Option)
-<
-< data WrappedOptionList : OptionList -> Type where
-<   MkWrappedOptionList : (x : OptionList) -> WrappedOptionList x
-<
-< data XorLists : OptionListList -> Type where
-<   MkXorLists : (x : OptionListList) -> XorLists x
+<pre>
+data IsNotClashing : ClashValue -> Type where
+  Ok : IsNotClashing NotClashing
+</pre>
 
 <p> Example values, used later: </p>
 
-< opts123 : WrappedOptionList   [opt1, opt2, opt3]
-< opts123 = MkWrappedOptionList [opt1, opt2, opt3]
-<
-< opts12 : WrappedOptionList   [opt1, opt2]
-< opts12 = MkWrappedOptionList [opt1, opt2]
-<
-< opts13 : WrappedOptionList   [opt1, opt3]
-< opts13 = MkWrappedOptionList [opt1, opt3]
-<
-< myOptions12 : WrappedOptionList   [opt1, opt2]
-< myOptions12 = MkWrappedOptionList [opt1, opt2]
-<
-< myOptions23 : WrappedOptionList   [opt2, opt3]
-< myOptions23 = MkWrappedOptionList [opt2, opt3]
-<
-< myXors23 : XorLists   [[opt2, opt3]]
-< myXors23 = MkXorLists [[opt2, opt3]]
+<pre>
+opts123 : List Option
+opts123 = [opt1, opt2, opt3]
+
+opts12 : List Option
+opts12 = [opt1, opt2]
+
+opts13 : List Option
+opts13 = [opt1, opt3]
+
+myOptions12 : List Option
+myOptions12 = [opt1, opt2]
+
+myOptions23 : List Option
+myOptions23 = [opt2, opt3]
+
+myXors23 : List (List Option)
+myXors23 = [[opt2, opt3]]
+</pre>
 
 <p> The heart of the solution is the <code>ValidOptionList</code> data type. We take
 an option list and an xor list and, if a proof can be constructed for the value <code>Ok</code>
@@ -239,50 +233,53 @@ that <code>notclash opts xors</code> must evaluate to <code>NotClashing</code>. 
 data types <code>ClashValue</code> and <code>IsNotClashing</code> were needed. </p>
 
 <pre>
-data ValidOptionList : OptionList -> Type where
-  MkValidOptionList : {default Ok prf : IsNotClashing (notclash opts xors)}
-                   -> WrappedOptionList opts
-                   -> XorLists xors
+data ValidOptionList : List Option -> Type where
+  MkValidOptionList : (opts : List Option) -- WrappedOptionList opts
+                   -> (xors : List (List Option))
+                   -> {default Ok prf : IsNotClashing (notclash opts xors)}
                    -> ValidOptionList opts
 </pre>
 
 <p> Finally, the <code>runProgram</code> function takes a path to an executable and a valid list of options. <i>The fact that the list of options is valid
 is encoded in the type system</i>. </p>
 
-< runProgram : String -> ValidOptionList opts -> String
-< runProgram binary (MkValidOptionList opts xorsHere) = "pretended to run the program with options: " ++ show (unwrap opts)
-<   where unwrap : WrappedOptionList o -> OptionList
-<         unwrap (MkWrappedOptionList o) = o
+<pre>
+runProgram : String -> ValidOptionList opts -> String
+runProgram binary (MkValidOptionList opts xorsHere) = "pretended to run the program with options: " ++ show opts
+</pre>
 
 <p> This program has options 1 and 2 set with the xor condition saying that options 2 and 3 cannot be set at the same time, so it type checks: </p>
 
-< okProgram : String
-< okProgram = runProgram "/usr/local/prog" (MkValidOptionList myOptions12 myXors23)
+<pre>
+okProgram : String
+okProgram = runProgram "/usr/local/prog" (MkValidOptionList myOptions12 myXors23)
+</pre>
 
 <p> On the other hand, this program with options 2 and 3 set does not type check, as expected: </p>
 
-< notOkProgram : String
-< notOkProgram' = runProgram "/usr/local/prog" (MkValidOptionList myOptions23 myXors23)
+<pre>
+notOkProgram : String
+notOkProgram = runProgram "/usr/local/prog" (MkValidOptionList myOptions23 myXors23)
+</pre>
+
 
 <p> The first part of the error is a bit scary: </p>
 
 <pre>
- `-- When elaborating right hand side of notOkProgram:
-     When elaborating argument prf to constructor Other.MkValidOptionList:
-             Can't unify
-                     IsNotClashing NotClashing
-             with
-                     IsNotClashing (boolElim (foldrImpl (flip (.) . flip (\x => \y => x || Delay (Prelude.Classes.Nat instance of Prelude.Classes.Ord, method > (Nat instance of Prelude.Classes.Ord, method compare (length (Other.notclash, intersect [opt2, opt3] [[opt2, opt3]] [opt2, opt3] y)) 2) (length (Other.notclash, intersect [opt2, opt3] [[opt2, opt3]] [opt2, opt3] y)) 2 || Delay (Nat instance of Prelude.Classes.Eq, method == (length (Other.notclash, intersect [opt2, opt3] [[opt2, opt3]] [opt2, opt3] y)) 2)))) id id [[opt2, opt3]] False) (Delay Clashing) (Delay NotClashing))
+ Can't unify
+         IsNotClashing NotClashing
+ with
+         IsNotClashing (boolElim (foldrImpl (flip (.) . flip (\x => \y => x || Delay (Prelude.Classes.Nat instance of Prelude.Classes.Ord, method > (Nat instance of Prelude.Classes.Ord, method compare (length (OptionsInIdris.notclash, intersect myOptions23 myXors23 myOptions23 y)) 2) (length (OptionsInIdris.notclash, intersect myOptions23 myXors23 myOptions23 y)) 2 || Delay (Nat instance of Prelude.Classes.Eq, method == (length (OptionsInIdris.notclash, intersect myOptions23 myXors23 myOptions23 y)) 2)))) id id myXors23 False) (Delay Clashing) (Delay NotClashing))
 </pre>
 
 <p> but the second part has the goods: </p>
 
 <pre>
-             Specifically:
-                     Can't unify
-                             NotClashing
-                     with
-                             Clashing
+ Specifically:
+         Can't unify
+                 NotClashing
+         with
+                 Clashing
 </pre>
 
 <p> So there we have it. Compile-time error checking in Idris of a disjointness condition in the options for wrapping a legacy command line program. </p>

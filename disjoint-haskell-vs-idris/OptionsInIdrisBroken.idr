@@ -64,9 +64,9 @@ myXors23 : List (List Option)
 myXors23 = [[opt2, opt3]]
 
 data ValidOptionList : List Option -> Type where
-  MkValidOptionList : {default Ok prf : IsNotClashing (notclash opts xors)}
-                   -> (opts : List Option) -- WrappedOptionList opts
+  MkValidOptionList : (opts : List Option) -- WrappedOptionList opts
                    -> (xors : List (List Option))
+                   -> {default Ok prf : IsNotClashing (notclash opts xors)}
                    -> ValidOptionList opts
 
 runProgram : String -> ValidOptionList opts -> String

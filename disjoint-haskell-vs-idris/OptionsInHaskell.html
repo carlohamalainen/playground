@@ -167,101 +167,95 @@ I’m not sure if we can make this a compile time error in Haskell, so I’ll tu
 </p>
 
 <p> 
-First define an option data type, the quality instance, and a few examples:
+First define an option data type, the equality instance, and a few examples:
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Other</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">%</span><span style="color: blue; font-weight: bold;">default</span> <span style="">total</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Option</span> <span style="color: red;">=</span> <span style="">MkOption</span> <span style="">String</span> <span style="">String</span> <span style="">Int</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Show</span> <span style="">Option</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>   <span style="">show</span> <span style="color: red;">(</span><span style="">MkOption</span> <span style="">x</span> <span style="">y</span> <span style="">z</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: teal;">"Option "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span> <span style="">++</span> <span style="color: teal;">" "</span> <span style="">++</span> <span style="">show</span> <span style="">y</span> <span style="">++</span> <span style="color: teal;">" "</span> <span style="">++</span> <span style="">show</span> <span style="">z</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Eq</span> <span style="">Option</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>   <span style="color: red;">(</span><span style="">MkOption</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="">==</span> <span style="color: red;">(</span><span style="">MkOption</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">a'</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">a</span> <span style="">==</span> <span style="">a'</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">opt1</span> <span style="">:</span> <span style="">Option</span>
-<span style="">&gt;</span> <span style="">opt1</span> <span style="color: red;">=</span> <span style="">MkOption</span> <span style="color: teal;">"Value of Foo."</span> <span style="color: teal;">"-foo"</span> <span class="hs-num">34</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">opt2</span> <span style="">:</span> <span style="">Option</span>
-<span style="">&gt;</span> <span style="">opt2</span> <span style="color: red;">=</span> <span style="">MkOption</span> <span style="color: teal;">"Do bar."</span> <span style="color: teal;">"-bar"</span> <span class="hs-num">99</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">opt3</span> <span style="">:</span> <span style="">Option</span>
-<span style="">&gt;</span> <span style="">opt3</span> <span style="color: red;">=</span> <span style="">MkOption</span> <span style="color: teal;">"Blah."</span> <span style="color: teal;">"-blah"</span> <span class="hs-num">0</span>
-</code></pre>
+<pre>
+module OptionsInIdris
+
+%default total
+
+data Option = MkOption String String Int
+
+instance Show Option where
+  show (MkOption x y z) = "Option " ++ show x ++ " " ++ show y ++ " " ++ show z
+
+instance Eq Option where
+  (MkOption _ a _) == (MkOption _ a' _) = a == a'
+
+opt1 : Option
+opt1 = MkOption "Value of Foo." "-foo" 34
+
+opt2 : Option
+opt2 = MkOption "Do bar." "-bar" 99
+
+opt3 : Option
+opt3 = MkOption "Blah." "-blah" 0
+</pre>
+
 <p> 
 Next we need to encode <i>in the type system</i> the result of an option list clashing or not:
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">ClashValue</span> <span style="color: red;">=</span> <span style="">Clashing</span> <span style="color: red;">|</span> <span style="">NotClashing</span>
-</code></pre>
+<pre>
+data ClashValue = Clashing | NotClashing
+</pre>
+
 <p> 
 Checking if an option list has a clash is basically the same as in Haskell except that we return a <code>ClashValue</code> instead of a <code>Bool</code>:
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">notclash</span> <span style="">:</span> <span style="">List</span> <span style="">Option</span> <span style="color: red;">-&gt;</span> <span style="">List</span> <span style="color: red;">(</span><span style="">List</span> <span style="">Option</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">ClashValue</span>
-<span style="">&gt;</span> <span style="">notclash</span> <span style="">opts</span> <span style="">xors</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="color: red;">(</span><span style="">any</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">x</span> <span style="color: red;">=&gt;</span> <span style="">length</span> <span style="color: red;">(</span><span style="">intersect</span> <span style="">opts</span> <span style="">x</span><span style="color: red;">)</span> <span style="">&gt;=</span> <span class="hs-num">2</span><span style="color: red;">)</span> <span style="">xors</span><span style="color: red;">)</span>
-<span style="">&gt;</span>                            <span style="color: blue; font-weight: bold;">then</span> <span style="">Clashing</span>
-<span style="">&gt;</span>                            <span style="color: blue; font-weight: bold;">else</span> <span style="">NotClashing</span>
-<span style="">&gt;</span>    <span style="color: blue; font-weight: bold;">where</span> <span style="">intersect</span> <span style="">:</span> <span style="">Eq</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">List</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">List</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">List</span> <span style="">a</span>
-<span style="">&gt;</span>          <span style="">intersect</span> <span style="">[]</span> <span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">=</span> <span style="">[]</span>
-<span style="">&gt;</span>          <span style="">intersect</span> <span style="color: red;">(</span><span style="">x</span> <span style="color: red;">::</span> <span style="">xs</span><span style="color: red;">)</span> <span style="">ys</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">x</span> <span style="">`elem`</span> <span style="">ys</span> <span style="color: blue; font-weight: bold;">then</span> <span style="">x</span> <span style="color: red;">::</span> <span style="">intersect</span> <span style="">xs</span> <span style="">ys</span>
-<span style="">&gt;</span>                                                  <span style="color: blue; font-weight: bold;">else</span> <span style="">intersect</span> <span style="">xs</span> <span style="">ys</span>
-</code></pre>
+<pre>
+notclash : List Option -> List (List Option) -> ClashValue
+notclash opts xors = if (any (\x => length (intersect opts x) >= 2) xors)
+                           then Clashing
+                           else NotClashing
+   where intersect : Eq a => List a -> List a -> List a
+         intersect [] _ = []
+         intersect (x :: xs) ys = if x `elem` ys then x :: intersect xs ys
+                                                 else intersect xs ys
+</pre>
+
 <p> 
 <p>Next, the tricky bit. We create a data type <code>IsNotClashing</code> which has only one constructor, called <code>Ok</code>, that produces a value <code>IsNotClashing NotClashing</code>. <i>There is no way to produce the value <code>IsNotClashing Clashing</code></i>.</p>
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">IsNotClashing</span> <span style="">:</span> <span style="">ClashValue</span> <span style="color: red;">-&gt;</span> <span style="">Type</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>   <span style="">Ok</span> <span style="">:</span> <span style="">IsNotClashing</span> <span style="">NotClashing</span>
-</code></pre>
-<p> 
-I’m a bit hazy on the details of the next chunk of code, as I wasn’t able to get Idris to accept my default proof clause in the <code>MkValidOptionList</code> data constructor. We aren’t really doing anything here apart from introducing two type synonyms <code>OptionList</code> and <code>OptionListList</code>, and a wrapped version of each.
-</p>
+<pre>
+data IsNotClashing : ClashValue -> Type where
+  Ok : IsNotClashing NotClashing
+</pre>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">OptionList</span> <span style="">:</span> <span style="">Type</span>
-<span style="">&gt;</span> <span style="">OptionList</span> <span style="color: red;">=</span> <span style="">List</span> <span style="">Option</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">OptionListList</span> <span style="">:</span> <span style="">Type</span>
-<span style="">&gt;</span> <span style="">OptionListList</span> <span style="color: red;">=</span> <span style="">List</span> <span style="color: red;">(</span><span style="">List</span> <span style="">Option</span><span style="color: red;">)</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">WrappedOptionList</span> <span style="">:</span> <span style="">OptionList</span> <span style="color: red;">-&gt;</span> <span style="">Type</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>   <span style="">MkWrappedOptionList</span> <span style="">:</span> <span style="color: red;">(</span><span style="">x</span> <span style="">:</span> <span style="">OptionList</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">WrappedOptionList</span> <span style="">x</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">XorLists</span> <span style="">:</span> <span style="">OptionListList</span> <span style="color: red;">-&gt;</span> <span style="">Type</span> <span style="color: blue; font-weight: bold;">where</span>
-<span style="">&gt;</span>   <span style="">MkXorLists</span> <span style="">:</span> <span style="color: red;">(</span><span style="">x</span> <span style="">:</span> <span style="">OptionListList</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">XorLists</span> <span style="">x</span>
-</code></pre>
 <p> 
 Example values, used later:
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">opts123</span> <span style="">:</span> <span style="">WrappedOptionList</span>   <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt2</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span>
-<span style="">&gt;</span> <span style="">opts123</span> <span style="color: red;">=</span> <span style="">MkWrappedOptionList</span> <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt2</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">opts12</span> <span style="">:</span> <span style="">WrappedOptionList</span>   <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt2</span><span style="color: red;">]</span>
-<span style="">&gt;</span> <span style="">opts12</span> <span style="color: red;">=</span> <span style="">MkWrappedOptionList</span> <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt2</span><span style="color: red;">]</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">opts13</span> <span style="">:</span> <span style="">WrappedOptionList</span>   <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span>
-<span style="">&gt;</span> <span style="">opts13</span> <span style="color: red;">=</span> <span style="">MkWrappedOptionList</span> <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">myOptions12</span> <span style="">:</span> <span style="">WrappedOptionList</span>   <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt2</span><span style="color: red;">]</span>
-<span style="">&gt;</span> <span style="">myOptions12</span> <span style="color: red;">=</span> <span style="">MkWrappedOptionList</span> <span style="color: red;">[</span><span style="">opt1</span><span style="color: red;">,</span> <span style="">opt2</span><span style="color: red;">]</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">myOptions23</span> <span style="">:</span> <span style="">WrappedOptionList</span>   <span style="color: red;">[</span><span style="">opt2</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span>
-<span style="">&gt;</span> <span style="">myOptions23</span> <span style="color: red;">=</span> <span style="">MkWrappedOptionList</span> <span style="color: red;">[</span><span style="">opt2</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span>
-<span style="">&gt;</span> 
-<span style="">&gt;</span> <span style="">myXors23</span> <span style="">:</span> <span style="">XorLists</span>   <span style="color: red;">[</span><span style="color: red;">[</span><span style="">opt2</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span><span style="color: red;">]</span>
-<span style="">&gt;</span> <span style="">myXors23</span> <span style="color: red;">=</span> <span style="">MkXorLists</span> <span style="color: red;">[</span><span style="color: red;">[</span><span style="">opt2</span><span style="color: red;">,</span> <span style="">opt3</span><span style="color: red;">]</span><span style="color: red;">]</span>
-</code></pre>
+<pre>
+opts123 : List Option
+opts123 = [opt1, opt2, opt3]
+
+opts12 : List Option
+opts12 = [opt1, opt2]
+
+opts13 : List Option
+opts13 = [opt1, opt3]
+
+myOptions12 : List Option
+myOptions12 = [opt1, opt2]
+
+myOptions23 : List Option
+myOptions23 = [opt2, opt3]
+
+myXors23 : List (List Option)
+myXors23 = [[opt2, opt3]]
+</pre>
+
 <p> 
 The heart of the solution is the <code>ValidOptionList</code> data type. We take an option list and an xor list and, if a proof can be constructed for the value <code>Ok</code> using the expression <code>IsNotClashing (notclash opts xors)</code>, then we produce the actual value <code>ValidOptionList opts</code>. Due to the definition of <code>Ok</code>, this condition means that <code>notclash opts xors</code> must evaluate to <code>NotClashing</code>. Hopefully this makes it clear why the data types <code>ClashValue</code> and <code>IsNotClashing</code> were needed.
 </p>
 
 <pre>
-data ValidOptionList : OptionList -> Type where
-  MkValidOptionList : {default Ok prf : IsNotClashing (notclash opts xors)}
-                   -> WrappedOptionList opts
-                   -> XorLists xors
+data ValidOptionList : List Option -> Type where
+  MkValidOptionList : (opts : List Option) -- WrappedOptionList opts
+                   -> (xors : List (List Option))
+                   -> {default Ok prf : IsNotClashing (notclash opts xors)}
                    -> ValidOptionList opts
 </pre>
 
@@ -269,36 +263,39 @@ data ValidOptionList : OptionList -> Type where
 Finally, the <code>runProgram</code> function takes a path to an executable and a valid list of options. <i>The fact that the list of options is valid is encoded in the type system</i>.
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runProgram</span> <span style="">:</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">ValidOptionList</span> <span style="">opts</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
-<span style="">&gt;</span> <span style="">runProgram</span> <span style="">binary</span> <span style="color: red;">(</span><span style="">MkValidOptionList</span> <span style="">opts</span> <span style="">xorsHere</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: teal;">"pretended to run the program with options: "</span> <span style="">++</span> <span style="">show</span> <span style="color: red;">(</span><span style="">unwrap</span> <span style="">opts</span><span style="color: red;">)</span>
-<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span> <span style="">unwrap</span> <span style="">:</span> <span style="">WrappedOptionList</span> <span style="">o</span> <span style="color: red;">-&gt;</span> <span style="">OptionList</span>
-<span style="">&gt;</span>         <span style="">unwrap</span> <span style="color: red;">(</span><span style="">MkWrappedOptionList</span> <span style="">o</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">o</span>
-</code></pre>
+<pre>
+runProgram : String -> ValidOptionList opts -> String
+runProgram binary (MkValidOptionList opts xorsHere) = "pretended to run the program with options: " ++ show opts
+</pre>
+
 <p> 
 This program has options 1 and 2 set with the xor condition saying that options 2 and 3 cannot be set at the same time, so it type checks:
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">okProgram</span> <span style="">:</span> <span style="">String</span>
-<span style="">&gt;</span> <span style="">okProgram</span> <span style="color: red;">=</span> <span style="">runProgram</span> <span style="color: teal;">"/usr/local/prog"</span> <span style="color: red;">(</span><span style="">MkValidOptionList</span> <span style="">myOptions12</span> <span style="">myXors23</span><span style="color: red;">)</span>
-</code></pre>
+<pre>
+okProgram : String
+okProgram = runProgram "/usr/local/prog" (MkValidOptionList myOptions12 myXors23)
+</pre>
+
 <p> 
 On the other hand, this program with options 2 and 3 set does not type check, as expected:
 </p>
 
-<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">notOkProgram</span> <span style="">:</span> <span style="">String</span>
-<span style="">&gt;</span> <span style="">notOkProgram'</span> <span style="color: red;">=</span> <span style="">runProgram</span> <span style="color: teal;">"/usr/local/prog"</span> <span style="color: red;">(</span><span style="">MkValidOptionList</span> <span style="">myOptions23</span> <span style="">myXors23</span><span style="color: red;">)</span>
-</code></pre>
+<pre>
+notOkProgram : String
+notOkProgram = runProgram "/usr/local/prog" (MkValidOptionList myOptions23 myXors23)
+</pre>
+
+
 <p> 
 The first part of the error is a bit scary:
 </p>
 
 <pre>
- `-- When elaborating right hand side of notOkProgram:
-     When elaborating argument prf to constructor Other.MkValidOptionList:
-             Can't unify
-                     IsNotClashing NotClashing
-             with
-                     IsNotClashing (boolElim (foldrImpl (flip (.) . flip (\x => \y => x || Delay (Prelude.Classes.Nat instance of Prelude.Classes.Ord, method > (Nat instance of Prelude.Classes.Ord, method compare (length (Other.notclash, intersect [opt2, opt3] [[opt2, opt3]] [opt2, opt3] y)) 2) (length (Other.notclash, intersect [opt2, opt3] [[opt2, opt3]] [opt2, opt3] y)) 2 || Delay (Nat instance of Prelude.Classes.Eq, method == (length (Other.notclash, intersect [opt2, opt3] [[opt2, opt3]] [opt2, opt3] y)) 2)))) id id [[opt2, opt3]] False) (Delay Clashing) (Delay NotClashing))
+ Can't unify
+         IsNotClashing NotClashing
+ with
+         IsNotClashing (boolElim (foldrImpl (flip (.) . flip (\x => \y => x || Delay (Prelude.Classes.Nat instance of Prelude.Classes.Ord, method > (Nat instance of Prelude.Classes.Ord, method compare (length (OptionsInIdris.notclash, intersect myOptions23 myXors23 myOptions23 y)) 2) (length (OptionsInIdris.notclash, intersect myOptions23 myXors23 myOptions23 y)) 2 || Delay (Nat instance of Prelude.Classes.Eq, method == (length (OptionsInIdris.notclash, intersect myOptions23 myXors23 myOptions23 y)) 2)))) id id myXors23 False) (Delay Clashing) (Delay NotClashing))
 </pre>
 
 <p> 
@@ -306,11 +303,11 @@ but the second part has the goods:
 </p>
 
 <pre>
-             Specifically:
-                     Can't unify
-                             NotClashing
-                     with
-                             Clashing
+ Specifically:
+         Can't unify
+                 NotClashing
+         with
+                 Clashing
 </pre>
 
 <p> 
