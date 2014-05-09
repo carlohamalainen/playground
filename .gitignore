@@ -10,3 +10,5 @@ talk-template/.cabal-sandbox/*
 talk-template/cabal.sandbox.config
 talk-template/dist/*
 talk-template/reveal.js/*
+
+haskell/notes-on-free-monads-are-good-for-you/.cabal-sandbox/*
