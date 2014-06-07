@@ -4,6 +4,8 @@ I don't use <code>liftF</code> and instead write my own definition of <code>Free
 Gabriel Gonzalez's blog post <a href="http://www.haskellforall.com/2012/06/you-could-have-invented-free-monads.html">Why free monads matter</a>. For me this
 made it easier to see the monad structure, mainly because I wanted to avoid the details of <code>wrap</code> and <code>liftF</code> in <a href="http://hackage.haskell.org/package/free-4.7.1/docs/Control-Monad-Free-Class.html">Control.Monad.Free.Class</a>. </p>
 
+<p> Literate haskell source is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/notes-on-free-monads-are-good-for-you">https://github.com/carlohamalainen/playground/tree/master/haskell/notes-on-free-monads-are-good-for-you</a> </p>
+
 > {-# LANGUAGE OverloadedStrings #-}
 > {-# LANGUAGE RankNTypes #-}
 > {-# LANGUAGE InstanceSigs #-}
