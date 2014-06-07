@@ -56,11 +56,11 @@ How to read the types: for <code>Create</code>, <code>List</code>, and <code>Ret
 </ul>
 
 <p> 
-On the other hand, <code>Update </code>and <code>Delete </code>are “in-place.” In theory we could return a list of affected indexes, so <code>Update </code>could have been <code>Update (v -&gt; [i])</code>. But we’ll leave it as just <code>Update v</code>. Lastly, <code>Delete </code>just deletes the index/value pair, so we don’t have anything to return, so it’s not a function type.
+On the other hand, <code>Update</code>and <code>Delete</code> are “in-place.” In theory we could return a list of affected indexes, so <code>Update</code> could have been <code>Update (v -&gt; [i])</code>. But we’ll leave it as just <code>Update v</code>. Lastly, <code>Delete</code> just deletes the index/value pair, so we don’t have anything to return, so it’s not a function type.
 </p>
 
 <p> 
-Later we want to make our data store an instance of <code>Free </code> so we need data store to be an instance of <code>Functor</code>. Check the kind of <code>Free </code>in ghci:
+Later we want to make our data store an instance of <code>Free</code> so we need data store to be an instance of <code>Functor</code>. Check the kind of <code>Free</code> in ghci:
 </p>
 
 <pre>
@@ -69,7 +69,7 @@ Free :: (* -> *) -> * -> *
 </pre>
 
 <p> 
-However our <code>DataStore </code>has a concrete type. So add another parameter <code>k </code>and tweak the types:
+However our <code>DataStore</code> has a concrete type. So add another parameter <code>k</code> and tweak the types:
 </p>
 
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DataStoreF</span> <span style="">i</span> <span style="">v</span> <span style="">k</span> <span style="color: red;">=</span> <span style="">Create</span> <span style="">v</span>   <span style="color: red;">(</span><span style="">i</span>   <span style="color: red;">-&gt;</span> <span style="">k</span><span style="color: red;">)</span>
@@ -84,7 +84,7 @@ This is a bit like a continuation. Reading the types:
 
 <p> <ul>
 <li> 
-<code>Create</code>: the value <code>v </code>is part of the constructor, and the last bit is a function that uses the new index <code>i </code>and produces some <code>k</code>.
+<code>Create</code>: the value <code>v</code> is part of the constructor, and the last bit is a function that uses the new index <code>i</code> and produces some <code>k</code>.
 </li>
 <li> 
 <code>List</code>: now the annoying <code>()</code> has gone, and the constructor just holds the function which takes the list <code>[v]</code> and does something with it, returning something of type <code>k</code>.

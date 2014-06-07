@@ -44,23 +44,23 @@ that these three constructors will store a function type. </p>
 <li> <code>Retrieve</code>: We supply an index and get back a value. </li>
 </ul>
 
-<p> On the other hand, <code>Update </code>and <code>Delete </code>are
+<p> On the other hand, <code>Update</code>and <code>Delete</code> are
 "in-place." In theory we could return a list of affected indexes, so
-<code>Update </code>could have been <code>Update (v -> [i])</code>. But we'll leave it as just <code>Update v</code>. Lastly,
-<code>Delete </code>just deletes the index/value pair, so we don't
+<code>Update</code> could have been <code>Update (v -> [i])</code>. But we'll leave it as just <code>Update v</code>. Lastly,
+<code>Delete</code> just deletes the index/value pair, so we don't
 have anything to return, so it's not a function type. </p>
 
 <p> Later we want to make our data store an instance of
-<code>Free </code> so we need data store to be an instance of
-<code>Functor</code>. Check the kind of <code>Free </code>in ghci: </p>
+<code>Free</code> so we need data store to be an instance of
+<code>Functor</code>. Check the kind of <code>Free</code> in ghci: </p>
 
 <pre>
 ghci> :k Free
 Free :: (* -> *) -> * -> *
 </pre>
 
-<p> However our <code>DataStore </code>has a concrete type. So add another parameter
-<code>k </code>and tweak the types: </p>
+<p> However our <code>DataStore</code> has a concrete type. So add another parameter
+<code>k</code> and tweak the types: </p>
 
 > data DataStoreF i v k = Create v   (i   -> k)
 >                       | List       ([v] -> k)
@@ -71,8 +71,8 @@ Free :: (* -> *) -> * -> *
 <p> This is a bit like a continuation. Reading the types: </p>
 
 <p> <ul>
-<li> <code>Create</code>: the value <code>v </code>is part of the constructor, and the last bit is a
-          function that uses the new index <code>i </code>and produces some <code>k</code>. </li>
+<li> <code>Create</code>: the value <code>v</code> is part of the constructor, and the last bit is a
+          function that uses the new index <code>i</code> and produces some <code>k</code>. </li>
 <li> <code>List</code>:   now the annoying <code>()</code>  has  gone, and the constructor just holds
           the function which takes the list <code>[v]</code> and does something with it,
           returning something of type <code>k</code>. </li>
