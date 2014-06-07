@@ -8,6 +8,10 @@
 These are my personal notes on David Laing’s talk <a href="https://vimeo.com/92992647">Free monads are good for you - BFPG - 2014-04-22</a>. His code and slides are available here: <a href="https://github.com/dalaing/bfpg-2014-04">https://github.com/dalaing/bfpg-2014-04</a>. My code diverges from his in that I don’t use <code>liftF</code> and instead write my own definition of <code>Free</code>, and my own monad instance, which follows the style in Gabriel Gonzalez’s blog post <a href="http://www.haskellforall.com/2012/06/you-could-have-invented-free-monads.html">Why free monads matter</a>. For me this made it easier to see the monad structure, mainly because I wanted to avoid the details of <code>wrap</code> and <code>liftF</code> in <a href="http://hackage.haskell.org/package/free-4.7.1/docs/Control-Monad-Free-Class.html">Control.Monad.Free.Class</a>.
 </p>
 
+<p> 
+Literate haskell source is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/notes-on-free-monads-are-good-for-you">https://github.com/carlohamalainen/playground/tree/master/haskell/notes-on-free-monads-are-good-for-you</a>
+</p>
+
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE OverloadedStrings #-}</span>
 <span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE RankNTypes #-}</span>
 <span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE InstanceSigs #-}</span>
