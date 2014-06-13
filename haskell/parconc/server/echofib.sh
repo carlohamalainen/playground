@@ -1,1 +1,1 @@
-echo '200000\nend' | nc localhost $1
+echo 20; echo end | nc localhost $1
