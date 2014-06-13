@@ -8,8 +8,11 @@ import Text.Printf
 import Control.Exception
 
 -- Burn up the CPU.
-fib n = _fib !! n
-    where _fib = 0 : 1 : zipWith (+) _fib (tail _fib)
+fib :: Integer -> Integer
+fib n
+    | n == 0  = 0
+    | n == 1  = 1
+    | n > 1   = fib (n-1) + fib (n-2)
 
 talk :: Handle -> IO ()
 talk h = do
@@ -20,7 +23,7 @@ talk h = do
         line <- hGetLine h
         if line == "end"
             then hPutStrLn h "Thanks for using the fib service."
-            else do hPutStrLn h (show (fib (read line :: Int)))
+            else do hPutStrLn h (show (fib (read line :: Integer)))
                     loop
 
 port :: Int
