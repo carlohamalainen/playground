@@ -1,5 +1,7 @@
 <p> Not to self about <code>mapM</code>. Is it lazy? Sort of.</p>
 
+<p> Literate source is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/mapm">https://github.com/carlohamalainen/playground/tree/master/haskell/mapm</a>. </p>
+
 <p> First, some imports: </p>
 
 > {-# LANGUAGE OverloadedStrings, InstanceSigs #-}
