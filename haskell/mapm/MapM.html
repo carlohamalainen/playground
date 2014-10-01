@@ -1,0 +1,357 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+Not to self about <code>mapM</code>. Is it lazy? Sort of.
+</p>
+<p>
+First, some imports:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE OverloadedStrings, InstanceSigs #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Applicative</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="color: blue; font-weight: bold;">qualified</span> <span style="">Data</span><span style="">.</span><span style="">ByteString</span> <span style="color: blue; font-weight: bold;">as</span> <span style="">B</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">ByteString</span><span style="">.</span><span style="">Internal</span> <span style="color: red;">(</span><span style="">w2c</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Either</span>
+</code></pre>
+<p>
+I recently wrote some code using <a href="http://hackage.haskell.org/package/wreq">wreq</a> that seemed to use much more memory than I thought it should. The problem turned out not to be with wreq but with the way that I was using <code>mapM</code>. An equivalent snippet of code is:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">firstFile</span> <span style="color: red;">&lt;-</span> <span style="">head</span> <span style="">&lt;$&gt;</span> <span style="">mapM</span> <span style="">B</span><span style="">.</span><span style="">readFile</span> <span style="color: red;">(</span><span style="">take</span> <span class="hs-num">100000</span> <span style="">$</span> <span style="">repeat</span> <span style="color: teal;">"MapM.lhs"</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">$</span> <span style="">B</span><span style="">.</span><span style="">length</span> <span style="">firstFile</span>
+</code></pre>
+<p>
+I reasoned that <code>mapM</code> would construct its result lazily, then <code>head</code> would force evaluation of just the first element of the list. This isn’t the case, as <a href="http://stackoverflow.com/questions/3270255/is-haskells-mapm-not-lazy">explained here</a>. The function <code>mapM</code> is basically equivalent to this:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">mapM'</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">a</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">[</span><span style="">b</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">mapM'</span> <span style="">m</span> <span style="">[]</span> <span style="color: red;">=</span> <span style="">return</span> <span style="">[]</span>
+<span style="">&gt;</span> <span style="">mapM'</span> <span style="">m</span> <span style="color: red;">(</span><span style="">x</span><span style="">:</span><span style="">xs</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x'</span> <span style="color: red;">&lt;-</span> <span style="">m</span> <span style="">x</span>
+<span style="">&gt;</span>   <span style="">xs'</span> <span style="color: red;">&lt;-</span> <span style="">mapM'</span> <span style="">m</span> <span style="">xs</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="color: red;">(</span><span style="">x'</span><span style="">:</span><span style="">xs'</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+So the monadic action <code>m</code> is evaluated to build up the list elements.
+</p>
+<p>
+<p>One of the answers on the StackOverflow page says to use a step by step series to only evaluate the bits that are required:</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Stream</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Nil</span> <span style="color: red;">|</span> <span style="">Stream</span> <span style="">a</span> <span style="color: red;">(</span><span style="">m</span> <span style="color: red;">(</span><span style="">Stream</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+GHC 7.8.3 comes with <a href="http://www.haskell.org/ghc/docs/latest/html/libraries/ghc/src/Stream.html">Stream</a> defined as:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- In GHC 7.8.3:</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">newtype</span> <span style="">Stream</span> <span style="">m</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">=</span> <span style="">Stream</span> <span style="color: red;">{</span> <span style="">runStream</span> <span style="color: red;">::</span> <span style="">m</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">b</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">Stream</span> <span style="">m</span> <span style="">a</span> <span style="">b</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">}</span>
+</code></pre>
+<p>
+The idea is that it represents a sequence of monadic actions. A <code>Left</code> is a final value of type <code>b</code>, while <code>Right (a, Stream m a b)</code> represents an intermediate value of type <code>a</code> along with the remaining stream.
+</p>
+<p>
+The <code>Monad</code> instance is fairly straightforward. The <code>return</code> function turns a plain value into a final value (hence the <code>Left</code>), and the bind either stops with the final value or produces the new value along with the next stream.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">Monad</span> <span style="color: red;">(</span><span style="">Stream</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Stream</span> <span style="">$</span> <span style="">return</span> <span style="">$</span> <span style="">Left</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">Stream</span> <span style="">m</span> <span style="">&gt;&gt;=</span> <span style="">k</span> <span style="color: red;">=</span> <span style="">Stream</span> <span style="">$</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>                       <span style="">r</span> <span style="color: red;">&lt;-</span> <span style="">m</span>
+<span style="">&gt;</span>                       <span style="color: blue; font-weight: bold;">case</span> <span style="">r</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>                           <span style="">Left</span> <span style="">b</span>         <span style="color: red;">-&gt;</span> <span style="">runStream</span> <span style="">$</span> <span style="">k</span> <span style="">b</span>
+<span style="">&gt;</span>                           <span style="">Right</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">str</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="">$</span> <span style="">Right</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">str</span> <span style="">&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+There are also instances for <code>Functor</code> and <code>Applicative</code> but we don’t need them here.
+</p>
+<p>
+A handy function is <code>liftIO</code> which turns a normal monadic action into a stream:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">liftIO</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Stream</span> <span style="">IO</span> <span style="">b</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">liftIO</span> <span style="">io</span> <span style="color: red;">=</span> <span style="">Stream</span> <span style="">$</span> <span style="">io</span> <span style="">&gt;&gt;=</span> <span style="">return</span> <span style="">.</span> <span style="">Left</span>
+</code></pre>
+<p>
+<p>It just runs the <code>io</code> action, and pipes it to a <code>Left</code> and then returns it in a <code>Stream</code>.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">readFileS</span> <span style="color: red;">::</span> <span style="">FilePath</span> <span style="color: red;">-&gt;</span> <span style="">Stream</span> <span style="">IO</span> <span style="">b</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span>
+<span style="">&gt;</span> <span style="">readFileS</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">liftIO</span> <span style="">$</span> <span style="">B</span><span style="">.</span><span style="">readFile</span> <span style="">f</span>
+</code></pre>
+<p>
+To use <code>readFileS</code> we wrap it with <code>runStream</code>:
+</p>
+<pre>
+*Main> Left x <- runStream $ readFileS "MapM.lhs"
+*Main> print $ B.length x
+4243
+</pre>
+<p>
+So we can produce final values, but what about intermediate ones? This is what <code>yield</code> does:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">yield</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Stream</span> <span style="">m</span> <span style="">a</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">yield</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Stream</span> <span style="">$</span> <span style="">return</span> <span style="">$</span> <span style="">Right</span> <span style="">$</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">return</span> <span style="">()</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+At this point we have no idea about the remaining stream, so we return the unit <code>()</code>.
+</p>
+<p>
+For testing the code here we’ll take the definition of <code>collect</code> from Stream as well. It just walks through the entire Stream and collects the values, ignoring the final unit value.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">collect</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="">Stream</span> <span style="">m</span> <span style="">a</span> <span style="">()</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">[</span><span style="">a</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">collect</span> <span style="">str</span> <span style="color: red;">=</span> <span style="">go</span> <span style="">str</span> <span style="">[]</span>
+<span style="">&gt;</span>  <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">go</span> <span style="">str</span> <span style="">acc</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">r</span> <span style="color: red;">&lt;-</span> <span style="">runStream</span> <span style="">str</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">case</span> <span style="">r</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>       <span style="">Left</span> <span style="">()</span> <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="color: red;">(</span><span style="">reverse</span> <span style="">acc</span><span style="color: red;">)</span>
+<span style="">&gt;</span>       <span style="">Right</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">str'</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">go</span> <span style="">str'</span> <span style="color: red;">(</span><span style="">a</span><span style="">:</span><span style="">acc</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Now we can try out <code>yield</code> using monadic notation:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">yield123</span> <span style="color: red;">::</span> <span style="">Stream</span> <span style="">IO</span> <span style="">Int</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">yield123</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">yield</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>   <span style="">yield</span> <span class="hs-num">2</span>
+<span style="">&gt;</span>   <span style="">yield</span> <span class="hs-num">3</span>
+</code></pre>
+<pre>
+*Main> collect yield123
+[1,2,3]
+</pre>
+<p>
+We can mix normal Haskell control structures like if/then/else into the monadic notation:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">yieldEvens</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Stream</span> <span style="">IO</span> <span style="">Int</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">yieldEvens</span> <span style="">n</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">n</span> <span style="">&gt;</span> <span class="hs-num">10</span>
+<span style="">&gt;</span>                   <span style="color: blue; font-weight: bold;">then</span> <span style="">return</span> <span style="">()</span>
+<span style="">&gt;</span>                   <span style="color: blue; font-weight: bold;">else</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">yield</span> <span style="">n</span>
+<span style="">&gt;</span>                           <span style="">yieldEvens</span> <span style="">$</span> <span style="">n</span> <span style="">+</span> <span class="hs-num">2</span>
+</code></pre>
+<pre>
+*Main> collect $ yieldEvens 0
+[0,2,4,6,8,10]
+</pre>
+<p>
+We could read some files using our <code>readFileS</code> function and yield the results:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">readAFewFiles</span> <span style="color: red;">::</span> <span style="">Stream</span> <span style="">IO</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">readAFewFiles</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">readFileS</span> <span style="color: teal;">"MapM.lhs"</span> <span style="">&gt;&gt;=</span> <span style="">yield</span>
+<span style="">&gt;</span>   <span style="">readFileS</span> <span style="color: teal;">"MapM.lhs"</span> <span style="">&gt;&gt;=</span> <span style="">yield</span>
+<span style="">&gt;</span>   <span style="">readFileS</span> <span style="color: teal;">"MapM.lhs"</span> <span style="">&gt;&gt;=</span> <span style="">yield</span>
+<span style="">&gt;</span>   <span style="">readFileS</span> <span style="color: teal;">"MapM.lhs"</span> <span style="">&gt;&gt;=</span> <span style="">yield</span>
+<span style="">&gt;</span>   <span style="">readFileS</span> <span style="color: teal;">"MapM.lhs"</span> <span style="">&gt;&gt;=</span> <span style="">yield</span>
+</code></pre>
+<pre>
+*Main> length <$> collect readAFewFiles
+5
+</pre>
+<p>
+<p>We can generalise this to apply a monadic function to a list of arguments, which is basically what <code>mapM</code> does:</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">streamMapM</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Stream</span> <span style="">IO</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">streamMapM</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">[]</span> <span style="color: red;">=</span> <span style="">return</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">streamMapM</span> <span style="">f</span> <span style="color: red;">(</span><span style="">a</span><span style="">:</span><span style="color: blue; font-weight: bold;">as</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: red;">(</span><span style="">liftIO</span> <span style="">$</span> <span style="">f</span> <span style="">a</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="">yield</span>
+<span style="">&gt;</span>   <span style="">streamMapM</span> <span style="">f</span> <span style="color: blue; font-weight: bold;">as</span>
+</code></pre>
+<p>
+And we can even make an infinite stream:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">readForever</span> <span style="color: red;">::</span> <span style="">Stream</span> <span style="">IO</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">readForever</span> <span style="color: red;">=</span> <span style="">streamMapM</span> <span style="">B</span><span style="">.</span><span style="">readFile</span> <span style="color: red;">(</span><span style="">repeat</span> <span style="color: teal;">"MapM.lhs"</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Take from a stream and a definition of head for a stream:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">takeStream</span> <span style="color: red;">::</span> <span style="">Integer</span> <span style="color: red;">-&gt;</span> <span style="">Stream</span> <span style="">IO</span> <span style="">a</span> <span style="">()</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">[</span><span style="">a</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">takeStream</span> <span style="">n</span> <span style="">str</span> <span style="color: red;">=</span> <span style="">go</span> <span style="">str</span> <span style="">[]</span> <span style="">n</span>
+<span style="">&gt;</span>  <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">go</span> <span style="">str</span> <span style="">acc</span> <span style="">n</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">if</span> <span style="">n</span> <span style="">&lt;=</span> <span class="hs-num">0</span> <span style="color: blue; font-weight: bold;">then</span> <span style="">return</span> <span style="">acc</span>
+<span style="">&gt;</span>               <span style="color: blue; font-weight: bold;">else</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">r</span> <span style="color: red;">&lt;-</span> <span style="">runStream</span> <span style="">str</span>
+<span style="">&gt;</span>                       <span style="color: blue; font-weight: bold;">case</span> <span style="">r</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>                           <span style="">Left</span> <span style="">()</span>         <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="color: red;">(</span><span style="">reverse</span> <span style="">acc</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                           <span style="">Right</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">str'</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">go</span> <span style="">str'</span> <span style="color: red;">(</span><span style="">a</span><span style="">:</span><span style="">acc</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">n</span> <span style="color: green;">-</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">headStream</span> <span style="color: red;">::</span> <span style="">Stream</span> <span style="">IO</span> <span style="">a</span> <span style="">()</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">Maybe</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">headStream</span> <span style="">str</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">h</span> <span style="color: red;">&lt;-</span> <span style="">takeStream</span> <span class="hs-num">1</span> <span style="">str</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">$</span> <span style="color: blue; font-weight: bold;">case</span> <span style="">h</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>               <span style="color: red;">[</span><span style="">h'</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Just</span> <span style="">h'</span>
+<span style="">&gt;</span>               <span style="color: blue; font-weight: bold;">_</span>    <span style="color: red;">-&gt;</span> <span style="">Nothing</span>
+</code></pre>
+<p>
+So we can efficiently take the head of the stream without evaluating the entire thing:
+</p>
+<pre>
+*Main> (fmap B.length) <$> headStream readForever
+Just 5917
+</pre>
+<p>
+I should point out that the example of reading a file a bunch of times could be achieved without <code>Stream</code> just by storing a list of the monadic actions, and then evaluating the one that we want:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">listOfActions</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">IO</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">listOfActions</span> <span style="color: red;">=</span> <span style="">repeat</span> <span style="">$</span> <span style="">B</span><span style="">.</span><span style="">readFile</span> <span style="color: teal;">"MapM.lhs"</span>
+</code></pre>
+<p>
+which can be used as follows:
+</p>
+<pre>
+*Main> B.length <$> (head $ listOfActions)
+6455
+</pre>
+<p>
+The difference is that the list is somewhat static, in that we can’t mix control structures into it as we can do with <code>Stream</code>.
+</p>
+<p>
+<p>Interestingly, the definition for <code>Stream</code> looks very similar to the definition for <code>Free</code>, which I used in an <a href="/blog/2014/6/7/notes-on-free-monads">earlier post about free monads</a>:</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Stream</span> <span style="">m</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Nil</span>      <span style="color: red;">|</span> <span style="">Stream</span> <span style="">a</span> <span style="color: red;">(</span><span style="">m</span> <span style="color: red;">(</span><span style="">Stream</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Free</span>   <span style="">f</span> <span style="">r</span> <span style="color: red;">=</span> <span style="">MkPure</span> <span style="">r</span> <span style="color: red;">|</span> <span style="">MkFree</span>   <span style="color: red;">(</span><span style="">f</span> <span style="color: red;">(</span><span style="">Free</span>   <span style="">f</span> <span style="">r</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Here’s one way to encode <code>Stream</code>-like behaviour using free monads. I define two actions, yield and final. The yield action stores an input value of type <code>a</code>, a monadic function <code>a -&gt; IO b</code>, and the rest of the structure, which turns out to be conveniently represented as a function <code>b -&gt; k</code>. Being a function of <code>b</code> lets the rest of the structure depend on the result at the current node in the structure. The final action just stores the value and monadic action, and is a terminal node in the free monad.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">StreamF</span> <span style="">a</span> <span style="">b</span> <span style="">k</span> <span style="color: red;">=</span> <span style="">Yield</span> <span style="">a</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">k</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                    <span style="color: red;">|</span> <span style="">Final</span> <span style="">a</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+For convenience, <code>Command</code> is a simpler type signature:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">Command</span> <span style="">a</span> <span style="">b</span> <span style="">k</span> <span style="color: red;">=</span> <span style="">Free</span> <span style="color: red;">(</span><span style="">StreamF</span> <span style="">a</span> <span style="">b</span><span style="color: red;">)</span> <span style="">k</span>
+</code></pre>
+<p>
+As in my earlier post, we need instances for <code>Functor</code> and <code>Monad</code>. They are fairly straightforward:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Functor</span> <span style="color: red;">(</span><span style="">StreamF</span> <span style="">a</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">fmap</span> <span style="">f</span> <span style="color: red;">(</span><span style="">Yield</span> <span style="">a</span> <span style="">io</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Yield</span> <span style="">a</span> <span style="">io</span> <span style="color: red;">(</span><span style="">f</span> <span style="">.</span> <span style="">k</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="">fmap</span> <span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">(</span><span style="">Final</span> <span style="">a</span> <span style="">io</span><span style="color: red;">)</span>   <span style="color: red;">=</span> <span style="">Final</span> <span style="">a</span> <span style="">io</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="color: red;">(</span><span style="">Functor</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">Monad</span> <span style="color: red;">(</span><span style="">Free</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">return</span> <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Free</span> <span style="">f</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">return</span> <span style="">x</span> <span style="color: red;">=</span> <span style="">MkPure</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">&gt;&gt;=</span><span style="color: red;">)</span> <span style="color: red;">::</span> <span style="">Free</span> <span style="">f</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Free</span> <span style="">f</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Free</span> <span style="">f</span> <span style="">b</span>
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">MkFree</span> <span style="">x</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="">h</span> <span style="color: red;">=</span> <span style="">MkFree</span> <span style="">$</span> <span style="">fmap</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">q</span> <span style="color: red;">-&gt;</span> <span style="">q</span> <span style="">&gt;&gt;=</span> <span style="">h</span><span style="color: red;">)</span> <span style="">x</span>
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">MkPure</span> <span style="">r</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">f</span> <span style="">r</span>
+</code></pre>
+<p>
+Here are two helpers to make <code>Command</code>’s monadic usage easier:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Lift an IO action to a final Command.</span>
+<span style="">&gt;</span> <span style="">finalF</span> <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">a</span> <span style="">b</span> <span style="">r</span>
+<span style="">&gt;</span> <span style="">finalF</span> <span style="">a</span> <span style="">io</span> <span style="color: red;">=</span> <span style="">MkFree</span> <span style="">$</span> <span style="">Final</span> <span style="">a</span> <span style="">io</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: green;">-- Lift an IO action to a Command that yields the value</span>
+<span style="">&gt;</span> <span style="color: green;">-- and continues.</span>
+<span style="">&gt;</span> <span style="">yieldF</span> <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">a</span> <span style="">b</span> <span style="">b</span>
+<span style="">&gt;</span> <span style="">yieldF</span> <span style="">a</span> <span style="">io</span> <span style="color: red;">=</span> <span style="">MkFree</span> <span style="">$</span> <span style="">Yield</span> <span style="">a</span> <span style="">io</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">MkPure</span> <span style="">b</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+To run a <code>Command</code> we walk its structure recursively and run the IO actions as needed:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runCommand</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Show</span> <span style="">a</span><span style="color: red;">,</span> <span style="">Show</span> <span style="">b</span><span style="color: red;">,</span> <span style="">Show</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">Command</span> <span style="">a</span> <span style="">b</span> <span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">runCommand</span> <span style="color: red;">(</span><span style="">MkFree</span> <span style="color: red;">(</span><span style="">Final</span> <span style="">a</span> <span style="">io</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Final "</span> <span style="">++</span> <span style="">show</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">io</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Produced the value: "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">runCommand</span> <span style="color: red;">(</span><span style="">MkFree</span> <span style="color: red;">(</span><span style="">Yield</span> <span style="">a</span> <span style="">io</span> <span style="">next</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">b</span> <span style="color: red;">&lt;-</span> <span style="">io</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Yield: computed value: "</span> <span style="">++</span> <span style="">show</span> <span style="">b</span>
+<span style="">&gt;</span>   <span style="">runCommand</span> <span style="color: red;">(</span><span style="">next</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">runCommand</span> <span style="color: red;">(</span><span style="">MkPure</span> <span style="">x</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"MkPure: "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+</code></pre>
+<p>
+As with <code>Stream</code>, we can mix control structures with the creation of the free monad:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">exampleCommand</span> <span style="color: red;">::</span> <span style="">Command</span> <span style="">FilePath</span> <span style="">String</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">exampleCommand</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">yieldF</span> <span style="color: teal;">"hello1.txt"</span> <span style="">readFile</span>
+<span style="">&gt;</span>   <span style="">y</span> <span style="color: red;">&lt;-</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">x</span> <span style="">==</span> <span style="color: teal;">"hello1\n"</span>
+<span style="">&gt;</span>           <span style="color: blue; font-weight: bold;">then</span> <span style="">yieldF</span> <span style="color: teal;">"hello2.txt"</span> <span style="">readFile</span>
+<span style="">&gt;</span>           <span style="color: blue; font-weight: bold;">else</span> <span style="">finalF</span> <span style="color: teal;">"hello3.txt"</span> <span style="">readFile</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">y</span>
+</code></pre>
+<p>
+For example:
+</p>
+<pre>
+Yield: computed value: "hello1\n"
+Yield: computed value: "hello2\n"
+MkPure: "hello2\n"
+</pre>
+<p>
+Taking the head of a <code>Command</code> is straightforward using the definition of <code>runCommand</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">headCommand</span> <span style="color: red;">::</span> <span style="">Command</span> <span style="">a</span> <span style="">r</span> <span style="">r</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">r</span>
+<span style="">&gt;</span> <span style="">headCommand</span> <span style="color: red;">(</span><span style="">MkFree</span> <span style="color: red;">(</span><span style="">Final</span> <span style="">a</span> <span style="">io</span>  <span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">io</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">headCommand</span> <span style="color: red;">(</span><span style="">MkFree</span> <span style="color: red;">(</span><span style="">Yield</span> <span style="">a</span> <span style="">io</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">io</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">headCommand</span> <span style="color: red;">(</span><span style="">MkPure</span> <span style="">x</span><span style="color: red;">)</span>              <span style="color: red;">=</span> <span style="">return</span> <span style="">x</span>
+</code></pre>
+<p>
+Here it is in action:
+</p>
+<pre>
+*Main> :t headCommand exampleCommand
+headCommand exampleCommand :: IO String
+
+*Main> headCommand exampleCommand
+"hello1\n"
+</pre>
+<p>
+To finish things off, here are versions of <code>take</code> and <code>mapM</code> on <code>Command</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runOneCommand</span> <span style="color: red;">::</span> <span style="">Command</span> <span style="">t</span> <span style="">t</span> <span style="">()</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">()</span> <span style="color: red;">(</span><span style="">t</span><span style="color: red;">,</span> <span style="">Command</span> <span style="">t</span> <span style="">t</span> <span style="">()</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">runOneCommand</span> <span style="color: red;">(</span><span style="">MkFree</span> <span style="color: red;">(</span><span style="">Final</span> <span style="">a</span> <span style="">io</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">io</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">$</span> <span style="">Right</span> <span style="color: red;">(</span><span style="">x</span><span style="color: red;">,</span> <span style="">MkPure</span> <span style="">()</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">runOneCommand</span> <span style="color: red;">(</span><span style="">MkFree</span> <span style="color: red;">(</span><span style="">Yield</span> <span style="">a</span> <span style="">io</span> <span style="">next</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">b</span> <span style="color: red;">&lt;-</span> <span style="">io</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">$</span> <span style="">Right</span> <span style="color: red;">(</span><span style="">b</span><span style="color: red;">,</span> <span style="">next</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">runOneCommand</span> <span style="color: red;">(</span><span style="">MkPure</span> <span style="">()</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Left</span> <span style="">&lt;$&gt;</span> <span style="">return</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">takeCommand</span> <span style="color: red;">::</span> <span style="">Integer</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">t</span> <span style="">t</span> <span style="">()</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">[</span><span style="">t</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">takeCommand</span> <span style="">n</span> <span style="">str</span> <span style="color: red;">=</span> <span style="">go</span> <span style="">str</span> <span style="">[]</span> <span style="">n</span>
+<span style="">&gt;</span>  <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">go</span> <span style="">str</span> <span style="">acc</span> <span style="">n</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">if</span> <span style="">n</span> <span style="">&lt;=</span> <span class="hs-num">0</span> <span style="color: blue; font-weight: bold;">then</span> <span style="">return</span> <span style="">acc</span>
+<span style="">&gt;</span>               <span style="color: blue; font-weight: bold;">else</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">r</span> <span style="color: red;">&lt;-</span> <span style="">runOneCommand</span> <span style="">str</span>
+<span style="">&gt;</span>                       <span style="color: blue; font-weight: bold;">case</span> <span style="">r</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>                           <span style="">Left</span> <span style="">()</span>         <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="">$</span> <span style="">reverse</span> <span style="">acc</span>
+<span style="">&gt;</span>                           <span style="">Right</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">str'</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">go</span> <span style="">str'</span> <span style="color: red;">(</span><span style="">a</span><span style="">:</span><span style="">acc</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">n</span> <span style="color: green;">-</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">commandMapM</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">a</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">a</span> <span style="">a</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">commandMapM</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">[]</span> <span style="color: red;">=</span> <span style="">MkPure</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">commandMapM</span> <span style="">f</span> <span style="color: red;">(</span><span style="">a</span><span style="">:</span><span style="color: blue; font-weight: bold;">as</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">yieldF</span> <span style="">a</span> <span style="">f</span>
+<span style="">&gt;</span>   <span style="">commandMapM</span> <span style="">f</span> <span style="color: blue; font-weight: bold;">as</span>
+</code></pre>
+<p>
+It works like the <code>Stream</code> example:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">takeCommandExample</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">B</span><span style="">.</span><span style="">length</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="color: red;">(</span><span style="">takeCommand</span> <span class="hs-num">3</span> <span style="">$</span> <span style="">commandMapM</span> <span style="">readFileBB</span> <span style="color: red;">(</span><span style="">take</span> <span class="hs-num">100000</span> <span style="">$</span> <span style="">repeat</span> <span style="color: teal;">"MapM.lhs"</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="">print</span>
+<span style="">&gt;</span>  <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Since B.readFile :: String -&gt; B.ByteString</span>
+<span style="">&gt;</span>     <span style="color: green;">-- we have to write this wrapper so that the input</span>
+<span style="">&gt;</span>     <span style="color: green;">-- and result types match, as required by the</span>
+<span style="">&gt;</span>     <span style="color: green;">-- restriction "Command t t ()" in the signature</span>
+<span style="">&gt;</span>     <span style="color: green;">-- for takeCommand.</span>
+<span style="">&gt;</span>     <span style="">readFileBB</span> <span style="color: red;">::</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span>
+<span style="">&gt;</span>     <span style="">readFileBB</span> <span style="color: red;">=</span> <span style="">B</span><span style="">.</span><span style="">readFile</span> <span style="">.</span> <span style="color: red;">(</span><span style="">map</span> <span style="">w2c</span><span style="color: red;">)</span> <span style="">.</span> <span style="">B</span><span style="">.</span><span style="">unpack</span>
+</code></pre>
+<p>
+There we go:
+</p>
+<pre>
+*Main> takeCommandExample
+[11241,11241,11241]
+</pre>
+<div class="references">
+
+</div>

@@ -1,0 +1,1 @@
+cat ../literate_template/header.html > MapM.html; BlogLiterately MapM.lhs >> MapM.html
