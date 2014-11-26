@@ -95,4 +95,7 @@ main = do
 
     let grids = uniq $ concat $ parMap rdeepseq (dostuff $ HS.fromList iataFull) startingGrids
 
-    forM_ (filter (\(s, _) -> s >= 5) grids) $ \(_, Grid (Just x) (Just y) (Just z)) -> putStrLn $ x ++ y ++ z
+    forM_ (filter (\(s, _) -> s >= 5) grids) $ \(_, Grid (Just x) (Just y) (Just z)) -> do putStrLn x
+                                                                                           putStrLn y
+                                                                                           putStrLn z
+                                                                                           putStrLn ""

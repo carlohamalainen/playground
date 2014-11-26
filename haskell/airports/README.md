@@ -9,19 +9,20 @@ Use a sandbox:
 Say you have 16 cores:
 
     .cabal-sandbox/bin/airports +RTS -N16 > output.txt
-    cat output.txt | sort | uniq          > output_sorted_uniq.txt
 
-Grids are output one per line, e.g.
+Computed grids (as at 2014-11-26-1153):
 
-    AACDENLPB
+    BWN
+    CNS
+    NRT
 
-corresponds to the grid
+    ATL
+    MSE
+    MVD
 
-    AAC
-    DEN
-    LPB
-
-Sample grids (as at 2014-11-26-1153):
+    SLC
+    LED
+    UDG
 
     AAC
     DEN
@@ -31,21 +32,21 @@ Sample grids (as at 2014-11-26-1153):
     MBE
     MVD
 
-    AMM
-    KBV
+    BMA
     LED
+    TXL
 
-    ATL
-    MSE
-    MVD
-
-    ATL
-    MUC
-    MKY
+    SLC
+    CPH
+    LBC
 
     BCN
     WNR
     NST
+
+    STL
+    CHG
+    LGW
 
     BHN
     COR
@@ -55,22 +56,6 @@ Sample grids (as at 2014-11-26-1153):
     MEX
     ADL
 
-    BMA
-    LED
-    TXL
-
-    BWN
-    CNS
-    NRT
-
-    CNC
-    NRT
-    STL
-
-    FRA
-    ROK
-    ATL
-
     HBA
     BLK
     ATL
@@ -79,41 +64,45 @@ Sample grids (as at 2014-11-26-1153):
     PMO
     BMI
 
-    SCL
-    JOE
-    ORD
-
-    SCL
-    UDG
-    LGW
-
-    SLC
-    CPH
-    LBC
-
-    SLC
-    JED
-    UDG
-
-    SLC
+    AMM
+    KBV
     LED
-    UDG
-
-    STL
-    CHG
-    LGW
 
     TSV
     WIC
     BNE
 
+    SCL
+    UDG
+    LGW
+
+    FRA
+    ROK
+    ATL
+
     TWB
     SIN
     VCE
 
+    ATL
+    MUC
+    MKY
+
+    SLC
+    JED
+    UDG
+
+    SCL
+    JOE
+    ORD
+
     TWB
     XNN
     LRE
+
+    CNC
+    NRT
+    STL
 
     TXL
     WNR
