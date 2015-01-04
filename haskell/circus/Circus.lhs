@@ -1,4 +1,4 @@
-<p> A coding-challenge kind of question, and a short foray into QuickCheck. </p>
+<p> A coding-challenge kind of question, and a short foray into QuickCheck. Source is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/circus">https://github.com/carlohamalainen/playground/tree/master/haskell/circus</a>. </p>
 
 <p> Here is a question from <a href="http://www.amazon.com/Cracking-Coding-Interview-Programming-Questions/dp/098478280X">Cracking the Coding Interview, 4th Edition</a>: </p>
 
