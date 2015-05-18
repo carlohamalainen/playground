@@ -1,0 +1,216 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p> 
+A short note about using <a href="https://hackage.haskell.org/package/parallel-io">parallel-io</a> to run shell commands in parallel from Haskell. If you want to try out this blog post’s Literate Haskell source then your best bet is to compile in a sandbox which has various package versions fixed using the <code>cabal.config</code> file (via the <code>cabal freeze</code> command).
+</p>
+
+<p> 
+This is how to build the sandbox:
+</p>
+
+<pre>
+git clone https://github.com/carlohamalainen/playground.git
+cd playground/haskell/parallel
+rm -fr .cabal-sandbox cabal.sandbox.config dist # start fresh
+cabal sandbox init
+cabal install --haddock-hyperlink-source --dependencies-only
+cabal install
+cabal repl
+</pre>
+
+<p> 
+Also, note the line
+</p>
+
+<pre>
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+</pre>
+
+<p> 
+in <code>parallel.cabal</code>. Without those rtsopts options you would have to execute the binary using <code>./P +RTS -N</code>.
+</p>
+
+<p> 
+Now, onto the actual blog post. First, a few imports to get us going.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Main</span> <span style="color: blue; font-weight: bold;">where</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">Control</span><span style="">.</span><span style="">Concurrent</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">Control</span><span style="">.</span><span style="">Monad</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">Control</span><span style="">.</span><span style="">Concurrent</span><span style="">.</span><span style="">ParallelIO</span><span style="">.</span><span style="">Local</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">Data</span><span style="">.</span><span style="">Traversable</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="color: blue; font-weight: bold;">qualified</span> <span style="">Pipes</span><span style="">.</span><span style="">ByteString</span>                           <span style="color: blue; font-weight: bold;">as</span> <span style="">B</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="color: blue; font-weight: bold;">qualified</span> <span style="">Data</span><span style="">.</span><span style="">ByteString</span>                            <span style="color: blue; font-weight: bold;">as</span> <span style="">BS</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="color: blue; font-weight: bold;">qualified</span> <span style="">Data</span><span style="">.</span><span style="">ByteString</span><span style="">.</span><span style="">Lazy</span>                       <span style="color: blue; font-weight: bold;">as</span> <span style="">BSL</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">Data</span><span style="">.</span><span style="">ByteString</span><span style="">.</span><span style="">Internal</span> <span style="color: red;">(</span><span style="">w2c</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">System</span><span style="">.</span><span style="">Exit</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">System</span><span style="">.</span><span style="">IO</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span>           <span style="">System</span><span style="">.</span><span style="">Process</span><span style="">.</span><span style="">Streaming</span>
+</code></pre>
+<p> 
+In <a href="https://github.com/carlohamalainen/imagetrove-uploader">one of my work projects</a> I often need to call legacy command line tools to process various imaging formats (DICOM, MINC, Nifti, etc). I used to use a plain call to <code>createProcess</code> and then <code>readRestOfHandle</code> to read the stdout and stderr but I <a href="http://carlo-hamalainen.net/blog/2014/8/28/reading-stdout-and-stderr-of-createprocess">discovered that it can deadlock</a> and a better approach is to use <a href="http://hackage.haskell.org/package/process-streaming">process-streaming</a>. This is the current snippet that I use:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Copied from https://github.com/carlohamalainen/imagetrove-uploader/blob/master/src/Network/ImageTrove/Utils.hs</span>
+<span style="">&gt;</span> <span style="color: green;">-- Run a shell command, returning Right with stdout if the command exited successfully</span>
+<span style="">&gt;</span> <span style="color: green;">-- and Left with stderr if there was an exit failure.</span>
+<span style="">&gt;</span> <span style="">runShellCommand</span> <span style="color: red;">::</span> <span style="">FilePath</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">String</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">runShellCommand</span> <span style="">cmd</span> <span style="">args</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">exitCode</span><span style="color: red;">,</span> <span style="color: red;">(</span><span style="">stdOut</span><span style="color: red;">,</span> <span style="">stdErr</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">&lt;-</span> <span style="">execute</span> <span style="color: red;">(</span><span style="">pipeoe</span> <span style="color: red;">(</span><span style="">fromFold</span> <span style="">B</span><span style="">.</span><span style="">toLazyM</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">fromFold</span> <span style="">B</span><span style="">.</span><span style="">toLazyM</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="color: red;">(</span><span style="">proc</span> <span style="">cmd</span> <span style="">args</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">return</span> <span style="">$</span> <span style="color: blue; font-weight: bold;">case</span> <span style="">exitCode</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>         <span style="">ExitSuccess</span>   <span style="color: red;">-&gt;</span> <span style="">Right</span> <span style="">$</span> <span style="">map</span> <span style="">w2c</span> <span style="">$</span> <span style="">BS</span><span style="">.</span><span style="">unpack</span> <span style="">$</span> <span style="">BSL</span><span style="">.</span><span style="">toStrict</span> <span style="">stdOut</span>
+<span style="">&gt;</span>         <span style="">ExitFailure</span> <span style="">e</span> <span style="color: red;">-&gt;</span> <span style="">Left</span> <span style="">$</span> <span style="color: teal;">"runShellCommand: exit status "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span> <span style="">++</span> <span style="color: teal;">" with stdErr: "</span>
+<span style="">&gt;</span>                                                                 <span style="">++</span> <span style="color: red;">(</span><span style="">map</span> <span style="">w2c</span> <span style="">$</span> <span style="">BS</span><span style="">.</span><span style="">unpack</span> <span style="">$</span> <span style="">BSL</span><span style="">.</span><span style="">toStrict</span> <span style="">$</span> <span style="">stdErr</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+Suppose we have a shell command that takes a while, in this case because it’s sleeping. Pretend that it’s IO bound.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">longShellCommand</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">String</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">longShellCommand</span> <span style="">n</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Running sleep command for "</span> <span style="">++</span> <span style="">show</span> <span style="">n</span> <span style="">++</span> <span style="color: teal;">" second(s)."</span>
+<span style="">&gt;</span>   <span style="">runShellCommand</span> <span style="color: teal;">"sleep"</span> <span style="color: red;">[</span><span style="">show</span> <span style="">n</span> <span style="">++</span> <span style="color: teal;">"s"</span><span style="color: red;">]</span>
+</code></pre>
+<p> 
+We could run them in order:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main1</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: green;">-- Think of these as arguments to our long-running commands.</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">sleepTimes</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">forM_</span> <span style="">sleepTimes</span> <span style="">longShellCommand</span>
+</code></pre>
+<p> 
+In Haskell we can think of <code>IO</code> as a data type that describes an IO action, so we can build it up using ‘pure’ code and then execute them later. To make it a bit more explicit, here is a function for running an IO action:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runIO</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">runIO</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">result</span> <span style="color: red;">&lt;-</span> <span style="">x</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">result</span>
+</code></pre>
+<p> 
+We can use it like this:
+</p>
+
+<pre>
+*Main> let action = print 3 -- pure code, nothing happens yet
+*Main> runIO action         -- runs the action
+3
+</pre>
+
+<p> 
+And we can rewrite <code>main1</code> like this:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main2</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">sleepTimes</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">actions</span> <span style="color: red;">=</span> <span style="">map</span> <span style="">longShellCommand</span> <span style="">sleepTimes</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">String</span><span style="color: red;">)</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">forM_</span> <span style="">actions</span> <span style="">runIO</span>
+</code></pre>
+<p> 
+As an aside, <code>runIO</code> is equivalent to <code>liftM id</code> (see <a href="http://hackage.haskell.org/package/base-4.8.0.0/docs/Control-Monad.html#v:liftM">Control.Monad</a> for info about <code>liftM</code>).
+</p>
+
+<p> 
+Now, imagine that you had a lot of these shell commands to execute and wanted a pool of, say, 4 workers. The <a href="https://hackage.haskell.org/package/parallel-io">parallel-io</a> package provides <code>withPool</code> which can be used like this:
+</p>
+
+<pre>
+withPool 4 $ \pool -> parallel_ pool [putStrLn "Echo", putStrLn " in parallel"]
+</pre>
+
+<p> 
+Note that the IO actions (the <code>putStrLn</code> fragments) are provided in a list. A list of IO actions. So we can run our shell commands in parallel like so:
+</p>
+
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main3</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main3</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">sleepTimes</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">actions</span> <span style="color: red;">=</span> <span style="">map</span> <span style="">longShellCommand</span> <span style="">sleepTimes</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">String</span><span style="color: red;">)</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">hSetBuffering</span> <span style="">stdout</span> <span style="">LineBuffering</span> <span style="color: green;">-- Otherwise output is garbled.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">withPool</span> <span class="hs-num">4</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel_</span> <span style="">pool</span> <span style="">actions</span>
+</code></pre>
+<p> 
+If we did this a lot we might define our own version of <code>forM_</code> that uses <code>withPool</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">parForM_</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">IO</span> <span style="">a</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">parForM_</span> <span style="">nrWorkers</span> <span style="">tasks</span> <span style="color: red;">=</span> <span style="">withPool</span> <span style="">nrWorkers</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel_</span> <span style="">pool</span> <span style="">tasks</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main4</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main4</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">sleepTimes</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span class="hs-num">1</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">actions</span> <span style="color: red;">=</span> <span style="">map</span> <span style="">longShellCommand</span> <span style="">sleepTimes</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">String</span><span style="color: red;">)</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">hSetBuffering</span> <span style="">stdout</span> <span style="">LineBuffering</span> <span style="color: green;">-- Otherwise output is garbled.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">parForM_</span> <span class="hs-num">4</span> <span style="">actions</span>
+</code></pre>
+<p> 
+Here is another example of building up some IO actions in pure form and then executing them later. Imagine that instead of a list of Ints for the sleep times, we have some actual sleep times and others that represent an error case. An easy way to model this is using <a href="http://hackage.haskell.org/package/base-4.8.0.0/docs/Data-Either.html#t:Either">Either</a>, which by convention has the erroneous values in the <code>Left</code> and correct values in the <code>Right</code>.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main5</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main5</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">sleepTimes</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span style="">Right</span> <span class="hs-num">1</span><span style="color: red;">,</span> <span style="">Left</span> <span style="color: teal;">"something went wrong"</span><span style="color: red;">,</span> <span style="">Right</span> <span class="hs-num">2</span><span style="color: red;">,</span> <span style="">Right</span> <span class="hs-num">3</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">actions</span>  <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">traverse</span> <span style="">longShellCommand</span><span style="color: red;">)</span> <span style="">sleepTimes</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="color: red;">[</span><span style="">Char</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">String</span><span style="color: red;">)</span><span style="color: red;">)</span><span style="color: red;">]</span>
+<span style="">&gt;</span>       <span style="">actions'</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">join</span><span style="color: red;">)</span> <span style="">actions</span>                    <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">IO</span> <span style="color: red;">(</span><span style="">Either</span> <span style="color: red;">[</span><span style="">Char</span><span style="color: red;">]</span> <span style="">String</span><span style="color: red;">)</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">hSetBuffering</span> <span style="">stdout</span> <span style="">LineBuffering</span> <span style="color: green;">-- Otherwise output is garbled.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">parForM_</span> <span class="hs-num">4</span> <span style="">actions'</span>
+</code></pre>
+<p> 
+In <code>main5</code> we define <code>actions</code> by mapping a function over the sleep times, which are are now of type <code>Either String Int</code>. We can’t apply <code>longShellCommand</code> directly because it expects an <code>Int</code>, so we use <code>traverse longShellCommand</code> instead (see <a href="http://hackage.haskell.org/package/base-4.8.0.0/docs/Data-Traversable.html#v:traverse">Data.Traversable</a> for the definition of <code>traverse</code>).
+</p>
+
+<p> 
+Next, the Either-of-Either is a bit clunky but we can mash them together using <code>join</code>. Here we have to use <code>fmap</code> because we have list elements of type <code>IO (Either [Char] String)</code>, not <code>Either [Char] String</code> as <code>join</code> might expect.
+</p>
+
+<p> 
+One topic that I haven’t touched on is dealing with asynchronous exceptions. For this, have a read of <a href="https://www.fpcomplete.com/user/snoyberg/general-haskell/exceptions/catching-all-exceptions">Catching all exceptions</a> from Snoyman and also <a href="http://hackage.haskell.org/package/enclosed-exceptions">enclosed-exceptions</a>. Also, <a href="http://chimera.labs.oreilly.com/books/1230000000929/ch13.html">Chapter 13</a> of <a href="http://chimera.labs.oreilly.com/books/1230000000929">Parallel and Concurrent Programming in Haskell</a> shows how to use the handy <a href="https://hackage.haskell.org/package/async">async</a> package.
+</p>
+
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Run all of the mains.</span>
+<span style="">&gt;</span> <span style="">main</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main1"</span>
+<span style="">&gt;</span>   <span style="">main1</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main2"</span>
+<span style="">&gt;</span>   <span style="">main2</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main3"</span>
+<span style="">&gt;</span>   <span style="">main3</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main4"</span>
+<span style="">&gt;</span>   <span style="">main4</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main5"</span>
+<span style="">&gt;</span>   <span style="">main5</span>
+</code></pre>
+<div class="references">
+
+</div>
