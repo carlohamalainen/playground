@@ -1,0 +1,417 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p> 
+Note to self on catching exceptions in multithreaded Haskell code.
+</p>
+
+<p> 
+For my use cases there are two scenarios when running a list of worker threads:
+</p>
+
+<p> 
+<ol style="list-style-type: decimal">
+<li>If any thread throws an exception, give up on everything.
+</p>
+</li>
+</ol>
+<p> 
+<ol start="2" style="list-style-type: decimal">
+<li>If any thread throws an exception, log it, but let the other workers run to completion.
+</p>
+</li>
+</ol>
+<p> 
+First, imports that we’ll use:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE DeriveDataTypeable, ScopedTypeVariables #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Main</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Conduit</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Conduit</span><span style="">.</span><span style="">List</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Traversable</span> <span style="color: red;">(</span><span style="">traverse</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Applicative</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">Catch</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Concurrent</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Concurrent</span><span style="">.</span><span style="">Async</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Concurrent</span><span style="">.</span><span style="">ParallelIO</span><span style="">.</span><span style="">Local</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span> <span style="">hiding</span> <span style="color: red;">(</span><span style="">mapM</span><span style="color: red;">,</span> <span style="">mapM_</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">Catch</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Typeable</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Prelude</span> <span style="">hiding</span> <span style="color: red;">(</span><span style="">map</span><span style="color: red;">,</span> <span style="">mapM</span><span style="color: red;">,</span> <span style="">mapM_</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">System</span><span style="">.</span><span style="">IO</span>
+</code></pre>
+<p> 
+We will use code from <a href="https://hackage.haskell.org/package/parallel-io">parallel-io</a> and <a href="https://hackage.haskell.org/package/async">async</a> for running worker threads. For a pipeline we’ll also use <a href="http://hackage.haskell.org/package/conduit-1.2.4.2/docs/Data-Conduit.html">conduit</a>.
+</p>
+
+<p> 
+Here’s our exception type, which we throw using <code>throwM</code> from <a href="https://hackage.haskell.org/package/exceptions-0.8.0.2/docs/Control-Monad-Catch.html">Control.Monad.Catch</a>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">MyException</span> <span style="color: red;">=</span> <span style="">MyException</span> <span style="">String</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="color: red;">(</span><span style="">Show</span><span style="color: red;">,</span> <span style="">Typeable</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Exception</span> <span style="">MyException</span>
+</code></pre>
+<p> 
+Our two tasks. The first task immediately throws an exception; the second waits for 5 seconds and completes happily.
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">task1</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">task1</span> <span style="color: red;">=</span> <span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"task1 blew up"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">task2</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">task2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">threadDelay</span> <span style="">$</span> <span class="hs-num">5</span> <span style="">*</span> <span class="hs-num">10</span><span style="">^</span><span class="hs-num">6</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">$</span> <span style="color: teal;">"task2 finished"</span>
+</code></pre>
+<p> 
+<b>Example: parallel_</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main1</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">withPool</span> <span class="hs-num">2</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel_</span> <span style="">pool</span> <span style="color: red;">[</span><span style="">task1</span><span style="color: red;">,</span> <span style="">task2</span><span style="color: red;">]</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: red;">(</span><span style="">x</span> <span style="color: red;">::</span> <span style="">()</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main1
+*** Exception: MyException "task1 blew up"
+</pre>
+
+<p> 
+<b>Example: parallelE_</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main2</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">withPool</span> <span class="hs-num">2</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallelE_</span> <span style="">pool</span> <span style="color: red;">[</span><span style="">task1</span><span style="color: red;">,</span> <span style="">task2</span><span style="color: red;">]</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">x</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main2
+[Just (MyException "task1 blew up"),Nothing]
+</pre>
+
+<p> 
+<b>Example: parallel</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main3</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main3</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">withPool</span> <span class="hs-num">2</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel</span> <span style="">pool</span> <span style="color: red;">[</span><span style="">task1</span><span style="color: red;">,</span> <span style="">task2</span><span style="color: red;">]</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">x</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main3
+*** Exception: MyException "task1 blew up"
+</pre>
+
+<p> 
+<b>Example: parallelE</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main4</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main4</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">withPool</span> <span class="hs-num">2</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallelE</span> <span style="">pool</span> <span style="color: red;">[</span><span style="">task1</span><span style="color: red;">,</span> <span style="">task2</span><span style="color: red;">]</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">x</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main4
+[Left (MyException "task1 blew up"),Right "task2 finished"]
+</pre>
+
+<p> 
+<b>Example: async/wait</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main5</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main5</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">a1</span> <span style="color: red;">&lt;-</span> <span style="">async</span> <span style="">task1</span>
+<span style="">&gt;</span>   <span style="">a2</span> <span style="color: red;">&lt;-</span> <span style="">async</span> <span style="">task2</span>
+<span style="">&gt;</span>   <span style="">result1</span> <span style="color: red;">&lt;-</span> <span style="">wait</span> <span style="">a1</span>
+<span style="">&gt;</span>   <span style="">result2</span> <span style="color: red;">&lt;-</span> <span style="">wait</span> <span style="">a2</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: red;">[</span><span style="">result1</span><span style="color: red;">,</span> <span style="">result2</span><span style="color: red;">]</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main5
+*** Exception: MyException "task1 blew up"
+</pre>
+
+<p> 
+<b>Example: async/waitCatch</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main6</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main6</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">a1</span> <span style="color: red;">&lt;-</span> <span style="">async</span> <span style="">task1</span>
+<span style="">&gt;</span>   <span style="">a2</span> <span style="color: red;">&lt;-</span> <span style="">async</span> <span style="">task2</span>
+<span style="">&gt;</span>   <span style="">result1</span> <span style="color: red;">&lt;-</span> <span style="">waitCatch</span> <span style="">a1</span>
+<span style="">&gt;</span>   <span style="">result2</span> <span style="color: red;">&lt;-</span> <span style="">waitCatch</span> <span style="">a2</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: red;">[</span><span style="">result1</span><span style="color: red;">,</span> <span style="">result2</span><span style="color: red;">]</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main6
+[Left (MyException "task1 blew up"),Right "task2 finished"]
+</pre>
+
+<p> 
+<b>Example: concurrently</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main7</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main7</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">result</span> <span style="color: red;">&lt;-</span> <span style="">concurrently</span> <span style="">task1</span> <span style="">task2</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="">result</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main7
+*** Exception: MyException "task1 blew up"
+</pre>
+
+<p> 
+<b>Example: throwM in a conduit sink</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main8</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main8</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">sourceList</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span> <span style="">$$</span> <span style="color: red;">(</span><span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"main8 in conduit exploded"</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"this is never printed"</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*** Exception: MyException "main8 in conduit exploded"
+</pre>
+
+<p> 
+<b>Example: throwM in a conduit sink (on one value)</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main9</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main9</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">foo</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">x</span> <span style="">==</span> <span class="hs-num">3</span> <span style="color: blue; font-weight: bold;">then</span> <span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"got a 3 in main9"</span>
+<span style="">&gt;</span>                         <span style="color: blue; font-weight: bold;">else</span> <span style="">print</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">sourceList</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span> <span style="">$$</span> <span style="color: red;">(</span><span style="">mapM_</span> <span style="">foo</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"this is never printed"</span>
+</code></pre>
+<p> 
+The conduit processes values 1 and 2, throws an exception on 3, and never sees 4 and 5.
+</p>
+
+<pre>
+*Main> main9
+1
+2
+*** Exception: MyException "got a 3 in main9"
+</pre>
+
+<p> 
+<b>Example: throwM/catchC</b>
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main10</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main10</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">foo</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">x</span> <span style="">==</span> <span class="hs-num">3</span> <span style="color: blue; font-weight: bold;">then</span> <span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"got a 3 in main10"</span>
+<span style="">&gt;</span>                         <span style="color: blue; font-weight: bold;">else</span> <span style="">print</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">sink</span> <span style="color: red;">=</span> <span style="">catchC</span> <span style="color: red;">(</span><span style="">mapM_</span> <span style="">foo</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                     <span style="color: red;">(</span><span style="color: red;">\</span><span style="color: red;">(</span><span style="">e</span> <span style="color: red;">::</span> <span style="">SomeException</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">mapM_</span> <span style="">$</span> <span style="color: red;">\</span><span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"When processing "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span> <span style="">++</span> <span style="color: teal;">" caught exception: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">sourceList</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span> <span style="">$$</span> <span style="">sink</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main10 finished"</span>
+</code></pre>
+<p> 
+The output is not what I expected. Values 1 and 2 are processed as expected, then the 3 throws an exception, but the effect of <code>catchC</code> is that <b>the rest of the values (4 and 5) are processed using the second argument to <code>catchC</code></b>. In this situation, a conduit can’t be used to process a stream with independently failing components. You have to catch all exceptions before they bubble up to the conduit code.
+</p>
+
+<pre>
+1
+2
+When processing 4 caught exception: MyException "got a 3 in main10"
+When processing 5 caught exception: MyException "got a 3 in main10"
+"main10 finished"
+</pre>
+
+<p> 
+<b>Example: catchAll in conduit</b>
+</p>
+
+<p> 
+A combinator that runs an IO action and catches any exception:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">catchBlah</span> <span style="color: red;">::</span> <span style="">Show</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">catchBlah</span> <span style="">action</span> <span style="color: red;">=</span> <span style="color: red;">\</span><span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">catchAll</span> <span style="color: red;">(</span><span style="">action</span> <span style="">x</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                                   <span style="color: red;">(</span><span style="color: red;">\</span><span style="color: red;">(</span><span style="">e</span> <span style="color: red;">::</span> <span style="">SomeException</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"On value "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span> <span style="">++</span> <span style="color: teal;">" caught exception: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span><span style="color: red;">)</span>
+</code></pre>
+<p> 
+Using <code>catchBlah</code> in the sink:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main11</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main11</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">foo</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">x</span> <span style="">==</span> <span class="hs-num">3</span> <span style="color: blue; font-weight: bold;">then</span> <span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"got a 3 in main11"</span>
+<span style="">&gt;</span>                         <span style="color: blue; font-weight: bold;">else</span> <span style="">print</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">sourceList</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span> <span style="">$$</span> <span style="color: red;">(</span><span style="">mapM_</span> <span style="">$</span> <span style="">catchBlah</span> <span style="">foo</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main11 finished"</span>
+</code></pre>
+<p> 
+Now the conduit processes every value, because the exception is caught and dealt with at a lower level.
+</p>
+
+<pre>
+*Main> main11
+1
+2
+On value 3 caught exception: MyException "got a 3 in main11"
+4
+5
+"main11 finished"
+</pre>
+
+<p> 
+<b>Example: catchBlah’ in conduit</b>
+</p>
+
+<p> 
+Now, suppose we have a few stages in the conduit and the first stage blows up. Use <code>catchAll</code> to catch the exception and return a <code>IO (Maybe b)</code> instead of <code>IO b</code>:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">catchBlah'</span> <span style="color: red;">::</span> <span style="">Show</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">Maybe</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">catchBlah'</span> <span style="">action</span> <span style="color: red;">=</span> <span style="color: red;">\</span><span style="">x</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">catchAll</span> <span style="color: red;">(</span><span style="">action</span> <span style="">x</span> <span style="">&gt;&gt;=</span> <span style="color: red;">(</span><span style="">return</span> <span style="">.</span> <span style="">Just</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>            <span style="color: red;">(</span><span style="color: red;">\</span><span style="color: red;">(</span><span style="">e</span> <span style="color: red;">::</span> <span style="">SomeException</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"On value "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span> <span style="">++</span> <span style="color: teal;">" caught exception: "</span> <span style="">++</span> <span style="">show</span> <span style="">e</span>
+<span style="">&gt;</span>                                         <span style="">return</span> <span style="">Nothing</span><span style="color: red;">)</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main12</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main12</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">src</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">stage1</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">when</span> <span style="color: red;">(</span><span style="">x</span> <span style="">==</span> <span class="hs-num">3</span><span style="color: red;">)</span> <span style="">$</span> <span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"Got a 3 in stage1"</span>
+<span style="">&gt;</span>                     <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"First print: "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+<span style="">&gt;</span>                     <span style="">return</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">sourceList</span> <span style="">src</span> <span style="">$$</span> <span style="color: red;">(</span><span style="">mapM</span> <span style="">$</span> <span style="">catchBlah'</span> <span style="">stage1</span><span style="color: red;">)</span> <span style="">=$=</span> <span style="color: red;">(</span><span style="">mapM_</span> <span style="">print</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main12 finished"</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+First print: 1
+Just 1
+First print: 2
+Just 2
+On value 3 caught exception: MyException "Got a 3 in stage1"
+Nothing
+First print: 4
+Just 4
+First print: 5
+Just 5
+"main12 finished"
+</pre>
+
+<p> 
+<b>Example: catchBlah’ in conduit (tweaked)</b>
+</p>
+
+<p> 
+Same as the previous example but with nicer printing in the sink:
+</p>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main13</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main13</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">src</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">stage1</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">when</span> <span style="color: red;">(</span><span style="">x</span> <span style="">==</span> <span class="hs-num">3</span><span style="color: red;">)</span> <span style="">$</span> <span style="">throwM</span> <span style="">$</span> <span style="">MyException</span> <span style="color: teal;">"Got a 3 in stage1"</span>
+<span style="">&gt;</span>                     <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"First print: "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+<span style="">&gt;</span>                     <span style="">return</span> <span style="">x</span>
+<span style="">&gt;</span>       <span style="">stage2</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">case</span> <span style="">x</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>                       <span style="">Just</span> <span style="">x'</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Second print: "</span> <span style="">++</span> <span style="">show</span> <span style="color: red;">(</span><span style="">x'</span> <span style="">+</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                                     <span style="">putStrLn</span> <span style="color: teal;">""</span>
+<span style="">&gt;</span>                       <span style="">Nothing</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Second print got Nothing..."</span>
+<span style="">&gt;</span>                                     <span style="">putStrLn</span> <span style="color: teal;">""</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">sourceList</span> <span style="">src</span> <span style="">$$</span> <span style="color: red;">(</span><span style="">mapM</span> <span style="">$</span> <span style="">catchBlah'</span> <span style="">stage1</span><span style="color: red;">)</span> <span style="">=$=</span> <span style="color: red;">(</span><span style="">mapM_</span> <span style="">stage2</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">print</span> <span style="color: teal;">"main13 finished"</span>
+</code></pre>
+<p> 
+Output:
+</p>
+
+<pre>
+*Main> main13
+First print: 1
+Second print: 2
+
+First print: 2
+Second print: 3
+
+On value 3 caught exception: MyException "Got a 3 in stage1"
+Second print got Nothing...
+
+First print: 4
+Second print: 5
+
+First print: 5
+Second print: 6
+
+"main13 finished"
+</pre>
+
+
+<div class="references">
+
+</div>
