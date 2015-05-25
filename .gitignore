@@ -17,3 +17,5 @@ haskell/parallel/P
 haskell/parallel/P.lhs.bak
 haskell/parallel/cabal.sandbox.config
 haskell/parallel/dist/*
+haskell/exceptions-in-parallel/dist/
+haskell/exceptions-in-parallel/cabal.sandbox.config
