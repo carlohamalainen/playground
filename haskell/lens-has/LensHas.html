@@ -1,0 +1,280 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+Tinkering with lenses to deal with API changes.
+</p>
+<p>
+FIXME github url.
+</p>
+<p>
+First, some extensions and imports.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE GADTs                        #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE FlexibleInstances            #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE MultiParamTypeClasses        #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE TemplateHaskell              #-}</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">LensHas</span> <span style="color: blue; font-weight: bold;">where</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Applicative</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Lens</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Numeric</span><span style="">.</span><span style="">Natural</span>
+</code></pre>
+<h2>
+Introduction
+</h2>
+<p>
+Suppose we are working with a database service that stores files. Perhaps we communicate with it via a REST API. A file stored in the system has a location, which is a <code>FilePath</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">Location</span> <span style="color: red;">=</span> <span style="">FilePath</span>
+</code></pre>
+<p>
+We need to keep track of a few other things like the parent (referring to a collection of files) and a hash of the file. For simplicity I’ll make those two fields <code>String</code>s since the details aren’t important to us here.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DataFile</span> <span style="color: red;">=</span> <span style="">DataFile</span> <span style="color: red;">{</span>
+<span style="">&gt;</span>     <span class="hs-sel">_dataFileLocation</span> <span style="color: red;">::</span> <span style="">Location</span>
+<span style="">&gt;</span>   <span style="color: red;">,</span> <span class="hs-sel">_dataFileParent</span>   <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span>   <span style="color: red;">,</span> <span class="hs-sel">_dataFileHash</span>     <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="color: red;">}</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<p>
+(Ignore the underscores if you haven’t used lenses before.)
+</p>
+<p>
+After some time the API changes and we need to keep track of some different fields, so our data type changes to:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DataFile2</span> <span style="color: red;">=</span> <span style="">DataFile2</span> <span style="color: red;">{</span>
+<span style="">&gt;</span>     <span class="hs-sel">_dataFile2Location</span>   <span style="color: red;">::</span> <span style="">Location</span>
+<span style="">&gt;</span>   <span style="color: red;">,</span> <span class="hs-sel">_dataFile2Parent</span>     <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span>   <span style="color: red;">,</span> <span class="hs-sel">_dataFile2OtherField</span> <span style="color: red;">::</span> <span style="">Float</span> <span style="color: green;">-- new field</span>
+<span style="">&gt;</span>                                   <span style="color: green;">-- hash is not here anymore</span>
+<span style="">&gt;</span> <span style="color: red;">}</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<p>
+For compatibility we’d like to keep both definitions around, perhaps allowing the user to choose the v1 or v2 API with a configuration option. So how do we deal with our code that has to use <code>DataFile</code> or <code>DataFile2</code>? One option is to use a sum type:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DataFileSum</span> <span style="color: red;">=</span> <span style="">DFS1</span> <span style="">DataFile</span> <span style="color: red;">|</span> <span style="">DFS2</span> <span style="">DataFile2</span>
+</code></pre>
+<p>
+Any function that uses a <code>DataFile</code> must instead use <code>DataFileSum</code> and do case analysis on whether it is a v1 or v2.
+</p>
+<p>
+In my particular situation I had a number of functions that used just the <code>Location</code> part of the type. Is there a way to avoid the sum type?
+</p>
+<h2>
+Setter/Getter typeclasses
+</h2>
+<p>
+Use typeclasses to represent setting or getting the location value:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">SetLocation</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">setLocation</span> <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Location</span> <span style="color: red;">-&gt;</span> <span style="">a</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">GetLocation</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">getLocation</span> <span style="color: red;">::</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">Location</span>
+</code></pre>
+<p>
+Write the instance definitions for each case:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">SetLocation</span> <span style="">DataFile</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">setLocation</span> <span style="">d</span> <span style="">newLocation</span> <span style="color: red;">=</span> <span style="">d</span> <span style="color: red;">{</span> <span class="hs-sel">_dataFileLocation</span> <span style="color: red;">=</span> <span style="">newLocation</span> <span style="color: red;">}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">GetLocation</span> <span style="">DataFile</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">getLocation</span> <span style="color: red;">=</span> <span class="hs-sel">_dataFileLocation</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">SetLocation</span> <span style="">DataFile2</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">setLocation</span> <span style="">d</span> <span style="">newLocation</span> <span style="color: red;">=</span> <span style="">d</span> <span style="color: red;">{</span> <span class="hs-sel">_dataFile2Location</span> <span style="color: red;">=</span> <span style="">newLocation</span> <span style="color: red;">}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">GetLocation</span> <span style="">DataFile2</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">getLocation</span> <span style="color: red;">=</span> <span class="hs-sel">_dataFile2Location</span>
+</code></pre>
+<p>
+Now we use the general <code>getLocation</code> and <code>setLocation</code> functions instead of the specific data constructors of <code>DataFile</code> and <code>DataFile2</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main1</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">df</span> <span style="color: red;">=</span> <span style="">DataFile</span> <span style="color: teal;">"/foo/bar.txt"</span> <span style="color: teal;">"something"</span> <span style="color: teal;">"700321159acb26a5fd6d5ce0116a6215"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Original data file: "</span> <span style="">++</span> <span style="">show</span> <span style="">df</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Location in original: "</span> <span style="">++</span> <span style="">getLocation</span> <span style="">df</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">df'</span> <span style="color: red;">=</span> <span style="">setLocation</span> <span style="">df</span> <span style="color: teal;">"/blah/bar.txt"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Updated data file:    "</span> <span style="">++</span> <span style="">getLocation</span> <span style="">df'</span>
+</code></pre>
+<p>
+A function that uses a datafile can now be agnostic about which one it is, as long as the typeclass constraint is satisfied so that it has the appropriate getter/setter:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">doSomething</span> <span style="color: red;">::</span> <span style="">GetLocation</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">doSomething</span> <span style="">d</span> <span style="color: red;">=</span> <span style="">print</span> <span style="">$</span> <span style="">getLocation</span> <span style="">d</span>
+</code></pre>
+<p>
+Using <code>doSomething</code>:
+</p>
+<pre>
+*LensHas> doSomething $ DataFile "/foo/bar.txt" "parent" "12345"
+"/foo/bar.txt"
+
+*LensHas> doSomething $ DataFile2 "/foo/bar.txt" "parent" 42.2
+"/foo/bar.txt"
+</pre>
+<h2>
+Lenses
+</h2>
+<p>
+Lenses already deal with the concept of getters and setters, so let’s try to replicate the previous code in that framework.
+</p>
+<p>
+First, make lenses for the two data types (this uses Template Haskell):
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">makeLenses</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">DataFile</span>
+<span style="">&gt;</span> <span style="">makeLenses</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">DataFile2</span>
+</code></pre>
+<p>
+<p>Instead of type classes for setting and getting, make a single type class that represents the fact that a thing <i>has</i> a location.</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">HasLocation</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">location</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">a</span> <span style="">Location</span>
+</code></pre>
+<p>
+For the instance definitions we can use the lenses that were automatically made for us by the earlier <code>makeLenses</code> lines:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">HasLocation</span> <span style="">DataFile</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">location</span> <span style="color: red;">=</span> <span style="">dataFileLocation</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">DataFile</span> <span style="">Location</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">HasLocation</span> <span style="">DataFile2</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">location</span> <span style="color: red;">=</span> <span style="">dataFile2Location</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">DataFile2</span> <span style="">Location</span>
+</code></pre>
+<p>
+Here is <code>main1</code> rewritten to use the <code>location</code> lens:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main2</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">df</span> <span style="color: red;">=</span> <span style="">DataFile</span> <span style="color: teal;">"/foo/bar.txt"</span> <span style="color: teal;">"something"</span> <span style="color: teal;">"700321159acb26a5fd6d5ce0116a6215"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Original data file: "</span> <span style="">++</span> <span style="">show</span> <span style="">df</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Location in original: "</span> <span style="">++</span> <span style="">df</span><span style="">^.</span><span style="">location</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">df'</span> <span style="color: red;">=</span> <span style="">df</span> <span style="">&amp;</span> <span style="">location</span> <span style="">.~</span> <span style="color: teal;">"/blah/bar.txt"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Updated data file:    "</span> <span style="">++</span> <span style="">getLocation</span> <span style="">df'</span>
+</code></pre>
+<p>
+If you haven’t used lenses before the operators like <code>^.</code> might look insane, but there is a pattern to them. Check out <a href="http://intolerable.me/lens-operators-intro/">http://intolerable.me/lens-operators-intro</a> for an excellent guide with examples.
+</p>
+<p>
+One benefit of the lens approach is that we don’t have to manually write the setters and getters, as they come for free from the lenses for the original two data types. Another benefit is that lenses compose, so if the <code>Location</code> type was more than just a string, we wouldn’t have to manually deal with the composition of <code>getLocation</code> with <code>getSubPartOfLocation</code> and so on.
+</p>
+<p>
+The <code>doSomething</code> function can be rewritten using the <code>HasLocation</code> typeclass:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">doSomething'</span> <span style="color: red;">::</span> <span style="">HasLocation</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">doSomething'</span> <span style="">d</span> <span style="color: red;">=</span> <span style="">print</span> <span style="">$</span> <span style="">d</span><span style="">^.</span><span style="">location</span>
+</code></pre>
+<h2>
+Generalising HasLocation
+</h2>
+<p>
+Let’s generalise the <code>HasLocation</code> typeclass. Consider natural numbers (the <code>Natural</code> type).
+</p>
+<p>
+<p>First case: here’s a typeclass to represent the fact that a <code>Foo</code> can always be thought of as a <code>Natural</code>: <?p></p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">AsNatural1</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">nat1</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">a</span> <span style="">Natural</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Foo</span> <span style="color: red;">=</span> <span style="">Foo</span> <span style="color: red;">{</span>
+<span style="">&gt;</span>   <span class="hs-sel">_fooName</span> <span style="color: red;">::</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="color: red;">,</span> <span class="hs-sel">_fooNat</span>  <span style="color: red;">::</span> <span style="">Natural</span>
+<span style="">&gt;</span> <span style="color: red;">}</span> <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">makeLenses</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">Foo</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">AsNatural1</span> <span style="">Foo</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">nat1</span> <span style="color: red;">=</span> <span style="">fooNat</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">Foo</span> <span style="">Natural</span>
+</code></pre>
+<p>
+Second case: a natural is a natural by definition.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">AsNatural1</span> <span style="">Natural</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">nat1</span> <span style="color: red;">=</span> <span style="">id</span>
+</code></pre>
+<p>
+Third case: an <code>Integer</code> might be a <code>Natural</code>. The previous typeclasses used a <code>Lens’</code> but here we need a <code>Prism’</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">AsNatural2</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">nat2</span> <span style="color: red;">::</span> <span style="">Prism'</span> <span style="">a</span> <span style="">Natural</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">AsNatural2</span> <span style="">Integer</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">nat2</span> <span style="color: red;">=</span> <span style="">prism'</span> <span style="">toInteger</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">n</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">n</span> <span style="">&gt;=</span> <span class="hs-num">0</span> <span style="color: blue; font-weight: bold;">then</span> <span style="color: red;">(</span><span style="">Just</span> <span style="">.</span> <span style="">fromInteger</span><span style="color: red;">)</span> <span style="">n</span> <span style="color: blue; font-weight: bold;">else</span> <span style="">Nothing</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+We are doing much the same thing, and if we compare the two typeclasses the difference is in the type of “optical” thing being used (a lens or a prism):
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">AsNatural1</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">nat1</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">a</span> <span style="">Natural</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">AsNatural2</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">nat2</span> <span style="color: red;">::</span> <span style="">Prism'</span> <span style="">a</span> <span style="">Natural</span>
+</code></pre>
+<p>
+It turns out that the type to use is <code>Optic’</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">AsNatural</span> <span style="">p</span> <span style="">f</span> <span style="">s</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">natural</span> <span style="color: red;">::</span> <span style="">Optic'</span> <span style="">p</span> <span style="">f</span> <span style="">s</span> <span style="">Natural</span>
+</code></pre>
+<p>
+(We get the extra parameters <code>p</code> and <code>f</code> which seem to be unavoidable.)
+</p>
+<p>
+Now we can do all of the previous definitions using the single typeclass:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Lens into Foo:</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="color: red;">(</span><span style="">p</span> <span style="color: red;">~</span> <span style="color: red;">(</span><span style="color: red;">-&gt;</span><span style="color: red;">)</span><span style="color: red;">,</span> <span style="">Functor</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">AsNatural</span> <span style="">p</span> <span style="">f</span> <span style="">Foo</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">natural</span> <span style="color: red;">=</span> <span style="">fooNat</span> <span style="color: red;">::</span> <span style="">Lens'</span> <span style="">Foo</span> <span style="">Natural</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: green;">-- Natural is a Natural:</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">AsNatural</span> <span style="">p</span> <span style="">f</span> <span style="">Natural</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">natural</span> <span style="color: red;">=</span> <span style="">id</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: green;">-- An Integer might be a natural:</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="color: red;">(</span><span style="">Choice</span> <span style="">p</span><span style="color: red;">,</span> <span style="">Applicative</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">AsNatural</span> <span style="">p</span> <span style="">f</span> <span style="">Integer</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">natural</span> <span style="color: red;">=</span> <span style="">prism'</span> <span style="">toInteger</span> <span style="color: red;">(</span><span style="color: red;">\</span><span style="">n</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">n</span> <span style="">&gt;=</span> <span class="hs-num">0</span> <span style="color: blue; font-weight: bold;">then</span> <span style="color: red;">(</span><span style="">Just</span> <span style="">.</span> <span style="">fromInteger</span><span style="color: red;">)</span> <span style="">n</span> <span style="color: blue; font-weight: bold;">else</span> <span style="">Nothing</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Now we can work with a <code>Foo</code>, a <code>Natural</code>, or an <code>Integer</code> as a <code>Natural</code> by using the single optical <code>natural</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main3</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main3</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: green;">-- Underlying thing is a Lens:</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">$</span> <span style="color: red;">(</span><span style="">Foo</span> <span style="color: teal;">"name"</span> <span class="hs-num">34</span><span style="color: red;">)</span> <span style="">^.</span> <span style="">natural</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">$</span> <span style="color: red;">(</span><span style="">Foo</span> <span style="color: teal;">"name"</span> <span class="hs-num">34</span><span style="color: red;">)</span> <span style="">^.</span> <span style="">natural</span> <span style="">+</span> <span class="hs-num">1</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-num">42</span> <span style="color: red;">::</span> <span style="">Natural</span><span style="color: red;">)</span> <span style="">^.</span> <span style="">natural</span> <span style="">+</span> <span class="hs-num">1</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- Underlying thing is a Prism (hence the applicative form):</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">$</span> <span style="color: red;">(</span><span style="">+</span><span class="hs-num">1</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="color: red;">(</span><span style="color: red;">(</span><span class="hs-num">50</span> <span style="color: red;">::</span> <span style="">Integer</span><span style="color: red;">)</span>  <span style="">^?</span> <span style="">natural</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="">print</span> <span style="">$</span> <span style="color: red;">(</span><span style="">+</span><span class="hs-num">1</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="color: red;">(</span><span style="color: red;">(</span><span style="color: green;">-</span><span class="hs-num">99</span> <span style="color: red;">::</span> <span style="">Integer</span><span style="color: red;">)</span> <span style="">^?</span> <span style="">natural</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Output:
+</p>
+<pre>
+*LensHas> main3
+34
+35
+43
+Just 51
+Nothing
+</pre>
+<h2>
+Credit
+</h2>
+<p>
+The <code>AsNatural</code> type is a simplified version of the “As…” typeclasses in the <a href="http://hackage.haskell.org/package/coordinate">coordinate package</a>, e.g. <a href="http://hackage.haskell.org/package/coordinate-0.0.18/docs/Data-Geo-Coordinate-Minutes.html#t:AsMinutes">AsMinutes</a>. Thanks to Tony Morris on #haskell.au for helping with my changing-API question and pointing out the “As…” typeclasses. Also see the IRC logs in <a href="https://github.com/NICTA/coordinate/tree/master/etc">coordinate/etc</a> where <a href="https://twitter.com/kmett">Ed Kmett</a> explains some things about Optic.
+</p>
+<div class="references">
+
+</div>
