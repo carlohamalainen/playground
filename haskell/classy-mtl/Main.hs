@@ -8,8 +8,10 @@ type IoExceptReader = ReaderT Int (ExceptT String IO)
 
 dostuff :: ReaderT Int (ExceptT String IO) Int
 dostuff = do
+    -- Can use ask here (ReaderT):
     r <- ask
     if r == 42
+        -- Can also use throwError here (ExceptT)
         then throwError "Got 42, oh no"
         else return $ r + 1000
 
@@ -21,8 +23,8 @@ type IoReaderError = ExceptT String (ReaderT Int IO)
 
 readerThing :: ReaderT Int IO Int
 readerThing = do
+    -- Can only use ask here, no ExceptT stuff, unlike dostuff.
     r <- ask
-    -- maybe get a value from the environment (we can use liftIO here)
     return $ r + 1
 
 blah' :: IoReaderError Int
