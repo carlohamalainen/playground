@@ -2,6 +2,8 @@
 <p> This post has a minimal stand-alone example
 of the classy lenses and prisms from <a href="http://twitter.com/GeorgeTalksCode">George Wilson's</a> <a href="http://talks.bfpg.org/talks/2015-06-09.next_level_mtl.html">talk</a> about mtl. The source code for George's talk is here: <a href="https://github.com/gwils/next-level-mtl-with-classy-optics">https://github.com/gwils/next-level-mtl-with-classy-optics</a>. </p>
 
+<p> Literate Haskell source for this post is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/classy-mtl">https://github.com/carlohamalainen/playground/tree/master/haskell/classy-mtl</a>. </p>
+
 <p> First, some imports: </p>
 
 > {-# LANGUAGE OverloadedStrings    #-}
