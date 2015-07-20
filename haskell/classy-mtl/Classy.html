@@ -1,0 +1,280 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+This post has a minimal stand-alone example of the classy lenses and prisms from <a href="http://twitter.com/GeorgeTalksCode">George Wilson’s</a> <a href="http://talks.bfpg.org/talks/2015-06-09.next_level_mtl.html">talk</a> about mtl. The source code for George’s talk is here: <a href="https://github.com/gwils/next-level-mtl-with-classy-optics">https://github.com/gwils/next-level-mtl-with-classy-optics</a>.
+</p>
+<p>
+First, some imports:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE OverloadedStrings    #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE TemplateHaskell      #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Classy</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Lens</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">Except</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">Reader</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Text</span>
+</code></pre>
+<h2>
+Toy program - uses the network and a database
+</h2>
+<p>
+The case study in George’s talk was a program that has to interact with a database and the network. We have a type for the database connection info:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">DbConnection</span> <span style="color: red;">=</span> <span style="">Text</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">DbSchema</span>     <span style="color: red;">=</span> <span style="">Text</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DbConfig</span> <span style="color: red;">=</span> <span style="">DbConfig</span>
+<span style="">&gt;</span>     <span style="color: red;">{</span> <span class="hs-sel">_dbConn</span> <span style="color: red;">::</span> <span style="">DbConnection</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span class="hs-sel">_schema</span> <span style="color: red;">::</span> <span style="">DbSchema</span>
+<span style="">&gt;</span>     <span style="color: red;">}</span>
+</code></pre>
+<p>
+For the network we have a port and some kind of SSL setting:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">Port</span> <span style="color: red;">=</span> <span style="">Integer</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">Ssl</span>  <span style="color: red;">=</span> <span style="">Text</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">NetworkConfig</span> <span style="color: red;">=</span> <span style="">NetworkConfig</span>
+<span style="">&gt;</span>     <span style="color: red;">{</span> <span class="hs-sel">_port</span>     <span style="color: red;">::</span> <span style="">Port</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span class="hs-sel">_ssl</span>      <span style="color: red;">::</span> <span style="">Ssl</span>
+<span style="">&gt;</span>     <span style="color: red;">}</span>
+</code></pre>
+<p>
+At the top level, our application has a database and a network configuration:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">AppConfig</span> <span style="color: red;">=</span> <span style="">AppConfig</span>
+<span style="">&gt;</span>     <span style="color: red;">{</span> <span class="hs-sel">_appDbConfig</span>   <span style="color: red;">::</span> <span style="">DbConfig</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span class="hs-sel">_appNetConfig</span>  <span style="color: red;">::</span> <span style="">NetworkConfig</span>
+<span style="">&gt;</span>     <span style="color: red;">}</span>
+</code></pre>
+<p>
+Types for errors that we see when dealing with the database and the network:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DbError</span> <span style="color: red;">=</span> <span style="">QueryError</span> <span style="">Text</span> <span style="color: red;">|</span> <span style="">InvalidConnection</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">NetworkError</span> <span style="color: red;">=</span> <span style="">Timeout</span> <span style="">Int</span> <span style="color: red;">|</span> <span style="">ServerOnFire</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">AppError</span> <span style="color: red;">=</span> <span style="">AppDbError</span>  <span style="color: red;">{</span> <span style="">dbError</span>  <span style="color: red;">::</span> <span style="">DbError</span>      <span style="color: red;">}</span>
+<span style="">&gt;</span>               <span style="color: red;">|</span> <span style="">AppNetError</span> <span style="color: red;">{</span> <span style="">netError</span> <span style="color: red;">::</span> <span style="">NetworkError</span> <span style="color: red;">}</span>
+</code></pre>
+<h2>
+Classy lenses and prisms
+</h2>
+<p>
+Use Template Haskell to make all of the classy lenses and prisms. Documentation for <code>makeClassy</code> and <code>makeClassyPrisms</code> is in <a href="https://hackage.haskell.org/package/lens-4.11/docs/Control-Lens-TH.html">Control.Lens.TH</a>.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">makeClassy</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">DbConfig</span>
+<span style="">&gt;</span> <span style="">makeClassy</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">NetworkConfig</span>
+<span style="">&gt;</span> <span style="">makeClassy</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">AppConfig</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">makeClassyPrisms</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">DbError</span>
+<span style="">&gt;</span> <span style="">makeClassyPrisms</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">NetworkError</span>
+<span style="">&gt;</span> <span style="">makeClassyPrisms</span> <span style="color: teal;">'</span><span style="color: teal;">'</span><span style="">AppError</span>
+</code></pre>
+<p>
+We get the following typeclasses:
+</p>
+<ul>
+<li>
+<code>HasDbConfig</code>
+</li>
+<li>
+<code>HasNetworkConfig</code>
+</li>
+<li>
+<code>HasAppConfig</code>
+</li>
+<li>
+<code>AsNetworkError</code>
+</li>
+<li>
+<code>AsDbError</code>
+</li>
+<li>
+<code>AsAppError</code>
+</li>
+</ul>
+<p>
+For example, here is the generated class <code>HasDbConfig</code>:
+</p>
+<pre>
+*Classy> :i HasDbConfig
+class HasDbConfig c_a6IY where
+  dbConfig :: Functor f => (DbConfig -> f DbConfig) -> c0 -> f c0
+  dbConn   :: Functor f => (DbConnection -> f DbConnection) -> c0 -> f c0
+  schema   :: Functor f => (DbSchema -> f DbSchema) -> c0 -> f c0
+instance HasDbConfig DbConfig -- Defined at Classy.lhs:58:3
+</pre>
+<p>
+If we write <code>HasDbConfig r</code> in the class constraints of a type signature then we can use the lenses <code>dbConfig</code>, <code>dbConn</code>, and <code>schema</code> to get the entire config, connection string, and schema, from something of type <code>r</code>.
+</p>
+<p>
+In contrast, the constraint <code>AsNetworkError r</code> means that we can use the prisms <code>_NetworkError</code>, <code>_Timeout</code>, and <code>_ServerOnFire</code> on a value of type <code>r</code> to get at the network error details.
+</p>
+<pre>
+*Classy> :i AsNetworkError
+class AsNetworkError r_a759 where
+  _NetworkError ::
+    (Choice p, Control.Applicative.Applicative f) =>
+    p NetworkError (f NetworkError) -> p r0 (f r0)
+
+  _Timeout ::
+    (Choice p, Control.Applicative.Applicative f) =>
+    p Int (f Int) -> p r0 (f r0)
+
+  _ServerOnFire ::
+    (Choice p, Control.Applicative.Applicative f) =>
+    p () (f ()) -> p r0 (f r0)
+  	-- Defined at Classy.lhs:63:3
+
+instance AsNetworkError NetworkError -- Defined at Classy.lhs:63:3
+</pre>
+<h2>
+Using the class constraints
+</h2>
+<p>
+The first function is <code>loadFromDb</code> which uses a reader environment for database configuration, can throw a database error, and do IO actions.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loadFromDb</span> <span style="color: red;">::</span> <span style="color: red;">(</span> <span style="">MonadError</span> <span style="">e</span> <span style="">m</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                 <span style="">MonadReader</span> <span style="">r</span> <span style="">m</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                 <span style="">AsDbError</span> <span style="">e</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                 <span style="">HasDbConfig</span> <span style="">r</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                 <span style="">MonadIO</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">m</span> <span style="">Text</span>
+<span style="">&gt;</span> <span style="">loadFromDb</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- Due to "MonadReader r m" and "HasDbConfig r"</span>
+<span style="">&gt;</span>   <span style="color: green;">-- we can ask for the database config:</span>
+<span style="">&gt;</span>   <span style="">rdr</span> <span style="color: red;">&lt;-</span> <span style="">ask</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">dbconf</span>  <span style="color: red;">=</span> <span style="">rdr</span> <span style="">^.</span> <span style="">dbConfig</span> <span style="color: red;">::</span> <span style="">DbConfig</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- We can ask for the connection string directly:</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">connstr</span>  <span style="color: red;">=</span> <span style="">rdr</span> <span style="">^.</span> <span style="">dbConn</span> <span style="color: red;">::</span> <span style="">DbConnection</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- We have "AsDbError e", so we can throw a DB error:</span>
+<span style="">&gt;</span>   <span style="">throwError</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-sel">_InvalidConnection</span> <span style="">#</span><span style="color: red;">)</span> <span style="">()</span>
+<span style="">&gt;</span>   <span style="">throwError</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-sel">_QueryError</span> <span style="">#</span><span style="color: red;">)</span> <span style="color: teal;">"Bad SQL!"</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">return</span> <span style="color: teal;">"foo"</span>
+</code></pre>
+<p>
+Another function, <code>sendOverNet</code> uses a reader environment with a network config, throws network errors, and does IO actions.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">sendOverNet</span> <span style="color: red;">::</span> <span style="color: red;">(</span> <span style="">MonadError</span> <span style="">e</span> <span style="">m</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">MonadReader</span> <span style="">r</span> <span style="">m</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">AsNetworkError</span> <span style="">e</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">AsAppError</span> <span style="">e</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">HasNetworkConfig</span> <span style="">r</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">MonadIO</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">sendOverNet</span> <span style="">mydata</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- We have "MonadReader r m" and "HasNetworkConfig r"</span>
+<span style="">&gt;</span>   <span style="color: green;">-- so we can ask about the network config:</span>
+<span style="">&gt;</span>   <span style="">rdr</span> <span style="color: red;">&lt;-</span> <span style="">ask</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">netconf</span> <span style="color: red;">=</span> <span style="">rdr</span> <span style="">^.</span> <span style="">networkConfig</span>  <span style="color: red;">::</span> <span style="">NetworkConfig</span>
+<span style="">&gt;</span>       <span style="">p</span>       <span style="color: red;">=</span> <span style="">rdr</span> <span style="">^.</span> <span style="">port</span>           <span style="color: red;">::</span> <span style="">Port</span>
+<span style="">&gt;</span>       <span style="">s</span>       <span style="color: red;">=</span> <span style="">rdr</span> <span style="">^.</span> <span style="">ssl</span>            <span style="color: red;">::</span> <span style="">Ssl</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"Pretending to connect to the network..."</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- We have "AsNetworkError e" so we can throw a network error:</span>
+<span style="">&gt;</span>   <span style="">throwError</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-sel">_NetworkError</span> <span style="">#</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">Timeout</span> <span class="hs-num">100</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: green;">-- We have "AsAppError e" so we can throw an application-level error:</span>
+<span style="">&gt;</span>   <span style="">throwError</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-sel">_AppNetError</span> <span style="">#</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">Timeout</span> <span class="hs-num">100</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">return</span> <span style="">()</span>
+</code></pre>
+<p>
+If we load from the database and also send over the network then we get extra class constraints:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">loadAndSend</span> <span style="color: red;">::</span> <span style="color: red;">(</span> <span style="">AsAppError</span> <span style="">e</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">AsNetworkError</span> <span style="">e</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">AsDbError</span> <span style="">e</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">HasNetworkConfig</span> <span style="">r</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">HasDbConfig</span> <span style="">r</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">MonadReader</span> <span style="">r</span> <span style="">m</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">MonadError</span> <span style="">e</span> <span style="">m</span><span style="color: red;">,</span>
+<span style="">&gt;</span>                  <span style="">MonadIO</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">loadAndSend</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="color: teal;">"Loading from the database..."</span>
+<span style="">&gt;</span>   <span style="">t</span> <span style="color: red;">&lt;-</span> <span style="">loadFromDb</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">liftIO</span> <span style="">$</span> <span style="">putStrLn</span> <span style="color: teal;">"Sending to the network..."</span>
+<span style="">&gt;</span>   <span style="">sendOverNet</span> <span style="">t</span>
+</code></pre>
+<h2>
+Things that won’t compile
+</h2>
+<p>
+We can’t throw the database error <code>InvalidConnection</code> without the right class constraint:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">nope1</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">MonadError</span> <span style="">e</span> <span style="">m</span><span style="color: red;">,</span> <span style="">AsNetworkError</span> <span style="">e</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">nope1</span> <span style="color: red;">=</span> <span style="">throwError</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-sel">_InvalidConnection</span> <span style="">#</span><span style="color: red;">)</span> <span style="">()</span>
+</code></pre>
+<font color="red">
+<pre>
+Could not deduce (AsDbError e)
+arising from a use of ‘_InvalidConnection’
+</pre>
+<p></font></p>
+<p>
+We can’t throw an application error if we are only allowed to throw network errors, even though this specific application error is a network error:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">nope2</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">MonadError</span> <span style="">e</span> <span style="">m</span><span style="color: red;">,</span> <span style="">AsNetworkError</span> <span style="">e</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">nope2</span> <span style="color: red;">=</span> <span style="">throwError</span> <span style="">$</span> <span style="color: red;">(</span><span class="hs-sel">_AppNetError</span> <span style="">#</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">Timeout</span> <span class="hs-num">100</span><span style="color: red;">)</span>
+</code></pre>
+<font color="red">
+<pre>
+Could not deduce (AsAppError e)
+arising from a use of ‘_AppNetError’
+</pre>
+<p></font></p>
+<p>
+We can’t get the network config from a value of type <code>r</code> if we only have the constraint about having the database config:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">nope3</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">MonadReader</span> <span style="">r</span> <span style="">m</span><span style="color: red;">,</span> <span style="">HasDbConfig</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">nope3</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">rdr</span> <span style="color: red;">&lt;-</span> <span style="">ask</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">netconf</span> <span style="color: red;">=</span> <span style="">rdr</span> <span style="">^.</span> <span style="">networkConfig</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">return</span> <span style="">()</span>
+</code></pre>
+<font color="red">
+<pre>
+Could not deduce (HasNetworkConfig r)
+arising from a use of ‘networkConfig’
+</pre>
+<p></font></p>
+<h2>
+What is the #?
+</h2>
+The <code>#</code> is an infix alias for <a href="https://hackage.haskell.org/package/lens-4.11/docs/Control-Lens-Review.html#v:review">review</a>. More details are in <a href="https://hackage.haskell.org/package/lens-4.11/docs/Control-Lens-Review.html">Control.Lens.Review</a>.
+</p>
+<pre>
+*Classy> :t review _InvalidConnection ()
+review _InvalidConnection () :: AsDbError e => e
+
+*Classy> :t throwError $ review _InvalidConnection ()
+throwError $ review _InvalidConnection () :: (AsDbError e, MonadError e m) => m a
+</pre>
+<h2>
+What is the monad transformer stack?
+</h2>
+<p>
+We didn’t specify it! The functions <code>loadFromDb</code> and <code>sendOverNet</code> have the general monad <code>m</code> in their type signatures, not a specific transformer stack like <code>ReaderT AppConfig (ExceptT AppError IO) a</code>.
+</p>
+<h2>
+What else?
+</h2>
+<p>
+<a href="http://twitter.com/benkolera">Ben Kolera</a> did a talk at <a href="http://bfpg.org">BFPG</a> about <a href="http://talks.bfpg.org/talks/2015-02-24.monad_transformers.html">stacking monad transformers</a>. He later modified the code from his talk to use the classy lens/prism approach. You can see the code <a href="https://github.com/benkolera/talk-stacking-your-monads/tree/master/code">before</a> and <a href="https://github.com/benkolera/talk-stacking-your-monads/tree/master/code-classy">after</a>, and also see a <a href="https://github.com/benkolera/talk-stacking-your-monads/blob/master/classy.diff">diff</a>. As far as I could see there is <a href="https://github.com/benkolera/talk-stacking-your-monads/blob/master/code-classy/src/Csv.hs#L60">one spot</a> in the code where an error is thrown, which motivated me to create the stand-alone example in this post with the body for <code>loadFromDb</code> and <code>sendOverNet</code> sketched out.
+</p>
+<div class="references">
+
+</div>
