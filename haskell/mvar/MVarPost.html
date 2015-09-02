@@ -1,0 +1,184 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+A short note about using MVars in Haskell.
+</p>
+<p>
+Unlike earlier blog posts, this one should be built using <a href="https://github.com/commercialhaskell/stack">Stack</a>. Something like:
+</p>
+<pre>
+git clone https://github.com/carlohamalainen/playground.git
+cd playground/haskell/mvar
+stack build
+</pre>
+<p>
+Then use <code>stack ghci</code> instead of <code>cabal repl</code>. The main executable is <code>.stack-work/dist/x86_64-linux/Cabal-1.22.4.0/build/mvar-exe/mvar-exe</code>.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE ScopedTypeVariables #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Main</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Concurrent</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Concurrent</span><span style="">.</span><span style="">ParallelIO</span><span style="">.</span><span style="">Local</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">System</span><span style="">.</span><span style="">IO</span>
+</code></pre>
+<p>
+Here is the situation: we have a function that makes a call to some restricted resource, say a network API, and we would like calls to this API from our application to be serialized across multiple threads. For the purposes of this blog post, here is a dummy function that sleeps a bit and returns <code>x + 1</code>. Pretend that it’s calling a magical API on the network somewhere.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">getExpensiveThing</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">Int</span>
+<span style="">&gt;</span> <span style="">getExpensiveThing</span> <span style="">x</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">threadDelay</span> <span style="">$</span> <span class="hs-num">1</span> <span style="">*</span> <span class="hs-num">10</span><span style="">^</span><span class="hs-num">6</span>
+<span style="">&gt;</span>   <span style="">return</span> <span style="">$</span> <span style="">x</span> <span style="">+</span> <span class="hs-num">1</span>
+</code></pre>
+<p>
+We have a general task that makes use of the expensive resource:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">doThings</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">doThings</span> <span style="">tid</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">getExpensiveThing</span> <span style="">tid</span>
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"doThings: thread "</span> <span style="">++</span> <span style="">show</span> <span style="">tid</span> <span style="">++</span> <span style="color: teal;">" got "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+</code></pre>
+<p>
+At the top level we need to run a few <code>doThings</code> in parallel:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main0</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main0</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">hSetBuffering</span> <span style="">stdout</span> <span style="">LineBuffering</span> <span style="color: green;">-- Otherwise output is garbled.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">tasks</span> <span style="color: red;">=</span> <span style="">map</span> <span style="">doThings</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">withPool</span> <span class="hs-num">4</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel_</span> <span style="">pool</span> <span style="">tasks</span>
+</code></pre>
+<p>
+The problem with <code>main0</code> is that the calls to <code>getExpensiveThing</code> can happen simultaneously, so we need to use some kind of thread synchronisation primitive. I initially thought that I’d have to use a semaphore, a queue, or something fancy, but an <a href="http://hackage.haskell.org/package/base-4.8.1.0/docs/Control-Concurrent-MVar.html#t:MVar">MVar</a> can do the trick.
+</p>
+<p>
+We only need three operations on <code>MVar</code>:
+</p>
+<p>
+Use <code>newEmptyMVar</code> to create a new <code>MVar</code> which is initially empty:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">newEmptyMVar</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">MVar</span> <span style="">a</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Use <code>takeMVar</code> to get the contents of the <code>MVar</code>. If the <code>MVar</code> is empty, <code>takeMVar</code> will wait until it is full.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">takeMVar</span> <span style="color: red;">::</span> <span style="">MVar</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">a</span>
+</code></pre>
+<p>
+Finally, use <code>putMVar</code> to put a value into an <code>MVar</code>. If the <code>MVar</code> is full, then <code>putMVar</code> will wait until the <code>MVar</code> is empty. If multiple threads are blocked on an <code>MVar</code>, they are woken up in FIFO order.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">putMVar</span> <span style="color: red;">::</span> <span style="">MVar</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+</code></pre>
+<p>
+So what we can do is have <code>getExpensiveThing</code> use <code>takeMVar</code> to block until a worker requires a value. The return value can be passed back via another <code>MVar</code>, which the worker is itself waiting on. The data type <code>MVar</code> is polymorphic in its type parameter, so there is no trouble in having an <code>MVar</code> of an <code>MVar</code>, or an <code>MVar</code> of a tuple containing another <code>MVar</code>, and so on. This is what we’ll use to represent a blocking action with input value of type <code>a</code> and output value of type <code>b</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">InOut</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">=</span> <span style="">InOut</span> <span style="color: red;">(</span><span style="">MVar</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">MVar</span> <span style="">b</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+The outer <code>MVar</code> wraps a tuple, where the first component is the raw input value of type <code>a</code>, and the second component is the <code>MVar</code> in which the result value will be passed back. Here is the new <code>getExpensiveThing</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">getExpensiveThing'</span> <span style="color: red;">::</span> <span style="">InOut</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">getExpensiveThing'</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">io</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">forever</span> <span style="">$</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="color: red;">(</span><span style="color: red;">(</span><span style="">input</span> <span style="color: red;">::</span> <span style="">Int</span><span style="color: red;">)</span><span style="color: red;">,</span> <span style="color: red;">(</span><span style="">output</span> <span style="color: red;">::</span> <span style="">MVar</span> <span style="">Int</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">&lt;-</span> <span style="">takeMVar</span> <span style="">io</span>
+<span style="">&gt;</span>   <span style="">threadDelay</span> <span style="">$</span> <span class="hs-num">1</span> <span style="">*</span> <span class="hs-num">10</span><span style="">^</span><span class="hs-num">6</span>
+<span style="">&gt;</span>   <span style="">putMVar</span> <span style="">output</span> <span style="color: red;">(</span><span style="">input</span> <span style="">+</span> <span class="hs-num">1</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+The output <code>MVar</code> is contained inside the top level <code>MVar</code>. This way, <code>getExpensiveThing’</code> has a unique channel back to the calling function. I used <code>ScopedTypeVariables</code> to be able to write the types of <code>input</code> and <code>output</code> inline, but this is just for clarity in this blog post. Also note that <code>getExpensiveThing’</code> runs forever using <a href="http://hackage.haskell.org/package/base-4.8.1.0/docs/Control-Monad.html#v:forever">forever</a> from <a href="http://hackage.haskell.org/package/base-4.8.1.0/docs/Control-Monad.html">Control.Monad</a>.
+</p>
+<p>
+Here is the updated <code>doThings</code> that uses the <code>MVar</code> to communicate with <code>getExpensiveThing’</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">doThings'</span> <span style="color: red;">::</span> <span style="">InOut</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">doThings'</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">io</span><span style="color: red;">)</span> <span style="">tid</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">result</span> <span style="color: red;">&lt;-</span> <span style="">newEmptyMVar</span>      <span style="color: green;">-- For our result.</span>
+<span style="">&gt;</span>   <span style="">putMVar</span> <span style="">io</span> <span style="color: red;">(</span><span style="">tid</span><span style="color: red;">,</span> <span style="">result</span><span style="color: red;">)</span>    <span style="color: green;">-- Send our input (tid) and the result MVar.</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">takeMVar</span> <span style="">result</span>        <span style="color: green;">-- Get the value from the result MVar.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"doThings': thread "</span> <span style="">++</span> <span style="">show</span> <span style="">tid</span> <span style="">++</span> <span style="color: teal;">" got "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+</code></pre>
+<p>
+Finally, <code>main</code> needs a top-level <code>MVar</code> which is the first parameter to <code>doThings’</code> and a forked thread to run <code>getExpensiveThing’</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">hSetBuffering</span> <span style="">stdout</span> <span style="">LineBuffering</span> <span style="color: green;">-- Otherwise output is garbled.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">topMVar</span> <span style="color: red;">&lt;-</span> <span style="">newEmptyMVar</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">&lt;-</span> <span style="">forkIO</span> <span style="">$</span> <span style="">getExpensiveThing'</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">topMVar</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">tasks</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">doThings'</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">topMVar</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">withPool</span> <span class="hs-num">4</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel_</span> <span style="">pool</span> <span style="">tasks</span>
+</code></pre>
+<p>
+Now each evaluation of <code>threadDelay</code> (the sensitive bit of code that represents a call to a resource) happens sequentially</code> although the order is nondeterministic.
+</p>
+<pre>
+$ stack build && .stack-work/dist/x86_64-linux/Cabal-1.22.4.0/build/mvar-exe/mvar-exe
+doThings': thread 1 got 2
+doThings': thread 5 got 6
+doThings': thread 2 got 3
+doThings': thread 4 got 5
+doThings': thread 3 got 4
+</pre>
+<p>
+Just for fun, let’s make some helper functions to make calling a special worker via an <code>MVar</code> a bit cleaner. In general, calling a worker requires creating a results <code>MVar</code>, pushing the input and results <code>MVar</code> to the <code>InOut</code> <code>MVar</code>, and finally taking the result.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">callWorker</span> <span style="color: red;">::</span> <span style="">InOut</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span>
+<span style="">&gt;</span> <span style="">callWorker</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">m</span><span style="color: red;">)</span> <span style="">a</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">result</span> <span style="color: red;">&lt;-</span> <span style="">newEmptyMVar</span>
+<span style="">&gt;</span>     <span style="">putMVar</span> <span style="">m</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">result</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">takeMVar</span> <span style="">result</span>
+</code></pre>
+<p>
+To save ourselves having to fork a worker, we can write a combinator that takes a worker and an action and runs the action with access to the newly created <code>MVar</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">withWorker</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">InOut</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">c</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">c</span>
+<span style="">&gt;</span> <span style="">withWorker</span> <span style="">worker</span> <span style="">action</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">m</span> <span style="color: red;">&lt;-</span> <span style="">newEmptyMVar</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">io</span> <span style="color: red;">=</span> <span style="">InOut</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">&lt;-</span> <span style="">forkIO</span> <span style="">$</span> <span style="">worker</span> <span style="">io</span>
+<span style="">&gt;</span>   <span style="">action</span> <span style="">io</span>
+</code></pre>
+<p>
+Now <code>doThings’’</code> is a bit shorter, at the expense of not knowing (at a glance) what the <code>io</code> thing is going to do.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">doThings''</span> <span style="color: red;">::</span> <span style="">InOut</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">doThings''</span> <span style="">io</span> <span style="">tid</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">x</span> <span style="color: red;">&lt;-</span> <span style="">callWorker</span> <span style="">io</span> <span style="">tid</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">putStrLn</span> <span style="">$</span> <span style="color: teal;">"doThings'': thread "</span> <span style="">++</span> <span style="">show</span> <span style="">tid</span> <span style="">++</span> <span style="color: teal;">" got "</span> <span style="">++</span> <span style="">show</span> <span style="">x</span>
+</code></pre>
+<p>
+Finally, <code>main’</code> is largely unchanged except for <code>withWorker</code> at the top level.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">main'</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">main'</span> <span style="color: red;">=</span> <span style="">withWorker</span> <span style="">getExpensiveThing'</span> <span style="">$</span> <span style="color: red;">\</span><span style="">io</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>   <span style="">hSetBuffering</span> <span style="">stdout</span> <span style="">LineBuffering</span> <span style="color: green;">-- Otherwise output is garbled.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">let</span> <span style="">tasks</span> <span style="color: red;">=</span> <span style="">map</span> <span style="color: red;">(</span><span style="">doThings''</span> <span style="">io</span><span style="color: red;">)</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span class="hs-num">5</span><span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="">withPool</span> <span class="hs-num">4</span> <span style="">$</span> <span style="color: red;">\</span><span style="">pool</span> <span style="color: red;">-&gt;</span> <span style="">parallel_</span> <span style="">pool</span> <span style="">tasks</span>
+</code></pre>
+<p>
+Running <code>main’</code>:
+</p>
+<pre>
+*Main> main'
+doThings'': thread 2 got 3
+doThings'': thread 3 got 4
+doThings'': thread 4 got 5
+doThings'': thread 1 got 2
+doThings'': thread 5 got 6
+</pre>
+<div class="references">
+
+</div>
