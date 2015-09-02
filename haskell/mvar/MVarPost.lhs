@@ -1,4 +1,4 @@
-<p> A short note about using MVars in Haskell. </p>
+<p> A short note about using MVars in Haskell. Source is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/mvar">https://github.com/carlohamalainen/playground/tree/master/haskell/mvar</a>. </p>
 
 <p> Unlike earlier blog posts, this one should be built using <a href="https://github.com/commercialhaskell/stack">Stack</a>.
 Something like: </p>
