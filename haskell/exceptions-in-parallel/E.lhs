@@ -1,4 +1,4 @@
-<p> Note to self on catching exceptions in multithreaded Haskell code. </p>
+<p> Note to self on catching exceptions in multithreaded Haskell code. Literate Haskell source and build scripts and cabal stuff is at <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/exceptions-in-parallel">https://github.com/carlohamalainen/playground/tree/master/haskell/exceptions-in-parallel</a>. </p>
 
 <p> For my use cases there are two scenarios when running a list of worker threads: </p>
 

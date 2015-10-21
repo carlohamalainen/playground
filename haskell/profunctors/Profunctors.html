@@ -1,0 +1,154 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+Note to self about deriving the <code>Profunctor</code> typeclass.
+</p>
+<p>
+This is a literate Haskell file, and it can be built using <a href="https://github.com/commercialhaskell/stack">Stack</a>:
+</p>
+<pre>
+git clone https://github.com/carlohamalainen/playground.git
+cd playground/haskell/profunctors
+stack build
+</pre>
+<p>
+Then use <code>stack ghci</code> instead of <code>cabal repl</code>. The main executable is in a path like <code>./.stack-work/install/x86_64-linux/lts-3.6/7.10.2/bin/profunctors-exe</code>.
+</p>
+<p>
+This blog post follows some of the examples from <a href="https://www.fpcomplete.com/user/liyang/profunctors">I love profunctors.</a>
+</p>
+<p>
+First, some extensions and imports:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE MultiParamTypeClasses #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE FlexibleInstances     #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE InstanceSigs          #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE RankNTypes            #-}</span>
+<span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE ScopedTypeVariables   #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Profunctors</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Applicative</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Char</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Functor</span><span style="">.</span><span style="">Constant</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Functor</span><span style="">.</span><span style="">Identity</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Data</span><span style="">.</span><span style="">Tuple</span> <span style="color: red;">(</span><span style="">swap</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="color: blue; font-weight: bold;">qualified</span> <span style="">Data</span><span style="">.</span><span style="">Map</span> <span style="color: blue; font-weight: bold;">as</span> <span style="">M</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">main</span> <span style="color: red;">=</span> <span style="">print</span> <span style="color: teal;">"boo"</span>
+</code></pre>
+<h2>
+Motivating example
+</h2>
+<p>
+The basic problem here is to write a function that capitalizes each word in a string. First, write a function that capitalizes a single word:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capWord</span> <span style="color: red;">::</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">capWord</span> <span style="">[]</span> <span style="color: red;">=</span> <span style="">[]</span>
+<span style="">&gt;</span> <span style="">capWord</span> <span style="color: red;">(</span><span style="">h</span><span style="">:</span><span style="">t</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">toUpper</span> <span style="">h</span><span style="color: red;">)</span><span style="">:</span><span style="color: red;">(</span><span style="">map</span> <span style="">toLower</span> <span style="">t</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+The straightforward solution (ignoring the loss of extra spaces between words since <code>unwords . words</code> is not an isomorphism) is to use this composition:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize</span> <span style="color: red;">::</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">capitalize</span> <span style="color: red;">=</span> <span style="">unwords</span> <span style="">.</span> <span style="color: red;">(</span><span style="">map</span> <span style="">capWord</span><span style="color: red;">)</span> <span style="">.</span> <span style="">words</span>
+</code></pre>
+<p>
+Example output:
+</p>
+<pre>
+*Profunctors> capitalize "hey yo WHAT DID THIS          DO?"
+"Hey Yo What Did This Do?"
+</pre>
+<p>
+Why stop here? Let’s generalise the <code>capitalize</code> function by factoring out the <code>words</code> and <code>unwords</code> functions. Call them <code>w</code> and <code>u</code> and make them arguments:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize1</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">String</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">String</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">capitalize1</span> <span style="">w</span> <span style="">u</span> <span style="color: red;">=</span> <span style="">u</span> <span style="">.</span> <span style="color: red;">(</span><span style="">map</span> <span style="">capWord</span><span style="color: red;">)</span> <span style="">.</span> <span style="">w</span>
+</code></pre>
+<p>
+Now, <code>capitalize ≡ capitalize1 words unwords</code>.
+</p>
+<p>
+We may as well factor out <code>map capWord</code> as well:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize2</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">String</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span><span style="color: red;">)</span>
+<span style="">&gt;</span>              <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">String</span><span style="color: red;">)</span>
+<span style="">&gt;</span>              <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span><span style="color: red;">)</span>
+<span style="">&gt;</span>              <span style="color: red;">-&gt;</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">capitalize2</span> <span style="">w</span> <span style="">u</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">u</span> <span style="">.</span> <span style="">f</span> <span style="">.</span> <span style="">w</span>
+</code></pre>
+<p>
+We have: <code>capitalize ≡ capitalize2 words unwords (map capWord)</code>.
+</p>
+<p>
+Now look at the types - there is no reason to be restricted to <code>String</code> and <code>[String]</code> so use the most general types that make the composition <code>u . f . w</code> work:
+</p>
+<pre>
+     w          f          u
+c -------> d -------> b -------> d
+</pre>
+<p>
+so <code>w :: c -&gt; d</code> and similar for <code>f</code> and <code>u</code>. This lets us write
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize3</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">d</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">d</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">capitalize3</span> <span style="">w</span> <span style="">u</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">u</span> <span style="">.</span> <span style="">f</span> <span style="">.</span> <span style="">w</span>
+</code></pre>
+<p>
+Next, we can generalize the type of <code>f</code>. To help with this step, recall that <code>-&gt;</code> is a functor (there is an instance <code>Functor (-&gt;)</code>) so write the last two types in the signature with prefix notation:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize3'</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span>              <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">d</span><span style="color: red;">)</span>
+<span style="">&gt;</span>              <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="color: red;">-&gt;</span><span style="color: red;">)</span> <span style="">a</span> <span style="">b</span>
+<span style="">&gt;</span>              <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="color: red;">-&gt;</span><span style="color: red;">)</span> <span style="">c</span> <span style="">d</span>
+<span style="">&gt;</span> <span style="">capitalize3'</span> <span style="">w</span> <span style="">u</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">u</span> <span style="">.</span> <span style="">f</span> <span style="">.</span> <span style="">w</span>
+</code></pre>
+<p>
+Now we can use a general functor <code>h</code> instead of <code>-&gt;</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize4</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">d</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="">h</span> <span style="">a</span> <span style="">b</span> <span style="color: green;">-- was (-&gt;) a b</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="">h</span> <span style="">c</span> <span style="">d</span> <span style="color: green;">-- was (-&gt;) c d</span>
+<span style="">&gt;</span> <span style="">capitalize4</span> <span style="">w</span> <span style="">u</span> <span style="">f</span> <span style="color: red;">=</span> <span style="">u</span> <span style="">.</span> <span style="">f</span> <span style="">.</span> <span style="">w</span>
+</code></pre>
+<p>
+Naturally this won’t work because the type signature has the functor <code>h</code> but the body of <code>capitalize4</code> is using function composition (the <code>.</code>) as the type error shows:
+</p>
+<pre>
+ | Couldn't match type ‘h’ with ‘(->)’
+||   ‘h’ is a rigid type variable bound by
+||       the type signature for
+||         capitalize3' :: (c -> a) -> (b -> d) -> h a b -> h c d
+|| Expected type: h c d
+||   Actual type: c -> d
+</pre>
+<p>
+Fortunately for us, we can make a typeclass that captures the behaviour that we want. We have actually arrived at the definition of a profunctor.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">class</span> <span style="">Profunctor</span> <span style="">f</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">dimap</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">d</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">c</span> <span style="">d</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Profunctor</span> <span style="color: red;">(</span><span style="color: red;">-&gt;</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">dimap</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">d</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">c</span> <span style="color: red;">-&gt;</span> <span style="">d</span>
+<span style="">&gt;</span>   <span style="">dimap</span> <span style="">h</span> <span style="">g</span> <span style="">k</span> <span style="color: red;">=</span> <span style="">g</span> <span style="">.</span> <span style="">k</span> <span style="">.</span> <span style="">h</span>
+</code></pre>
+<p>
+Now we can write the capitalize function using a typeclass constraint on <code>Profunctor</code> which lets us use the <code>dimap</code> function instead of explicit function composition:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">capitalize5</span> <span style="color: red;">::</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">capitalize5</span> <span style="">s</span> <span style="color: red;">=</span> <span style="">dimap</span> <span style="">words</span> <span style="">unwords</span> <span style="color: red;">(</span><span style="">map</span> <span style="">capWord</span><span style="color: red;">)</span> <span style="">s</span>
+</code></pre>
+<p>
+This is overkill for the capitalization problem, but it shows how structure can come out of simple problems if you keep hacking away.
+</p>
+<div class="references">
+
+</div>

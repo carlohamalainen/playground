@@ -21,3 +21,5 @@ haskell/exceptions-in-parallel/dist/
 haskell/exceptions-in-parallel/cabal.sandbox.config
 haskell/classy-mtl/cabal.sandbox.config
 haskell/classy-mtl/dist/*
+haskell/mvar/.stack-work/*
+haskell/profunctors/.stack-work/*

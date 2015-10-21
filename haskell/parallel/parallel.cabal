@@ -26,5 +26,6 @@ executable parallel
                      , bytestring
                      , process-streaming < 0.7.0.0
                      , pipes-bytestring
+                     , utf8-string
   -- hs-source-dirs:
   default-language:    Haskell2010

@@ -23,15 +23,18 @@ Output: The longest tower is length 6 and includes from top to bottom:
 
 <p> For contrast, here's one way to solve it in Haskell: </p>
 
-> {-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
+> {-# LANGUAGE TypeSynonymInstances, FlexibleInstances, MultiParamTypeClasses #-}
 >
 > module Circus where
 >
-> import Control.Applicative
+> import Control.Applicative ((<$>), (<*>))
 > import Data.Function (on)
 > import Data.List (inits, maximumBy, sort)
 > import Test.QuickCheck
 > import Test.QuickCheck.Modifiers()
+> import Text.ParserCombinators.Parsec
+> import Text.Parsec.Pos
+> import Text.Parsec.Prim
 
 <p> Model a person by an algebraic data type. The compiler is smart
 enough to work out the instances for <code>Eq</code>, <code>Ord</code>,
@@ -241,4 +244,30 @@ to <code>maximumBy</code>. Indeed, <code>findLongestSeq</code> on an empty list 
 
 <p> <center> <iframe width="560" height="315" src="//www.youtube.com/embed/XgasxJWgZBM?list=PLNFZ6HfKMrG1tz5aiYNXlu-k0b_qC2Ei4" frameborder="0" allowfullscreen></iframe> </center> </p>
 
+
+
+< person p = tokenPrim showPerson nextPos testPerson
+<    where
+<      showPerson x      = show x
+<      testPerson x      = if x == p then Just x else Nothing
+<      nextPos pos x xs  = updatePos pos x
+<
+<      -- err, http://www.vex.net/~trebla/haskell/parsec-generally.xhtml
+<      updatePos :: SourcePos -> Person -> SourcePos
+<      updatePos pos _ = pos
+
+> -- FIXME doesn't update anything...
+> nextPos pos _ _ = pos
+
+> pheight p = tokenPrim show nextPos getHeight
+>   where getHeight (Person h _) = Just h
+
+> pweight p = tokenPrim show nextPos getWeight
+>   where getWeight (Person _ w) = Just w
+
+> pheight' = tokenPrim show nextPos getHeight
+>   where getHeight (Person h _) = Just h
+
+> pweight' = tokenPrim show nextPos getWeight
+>   where getWeight (Person _ w) = Just w
 

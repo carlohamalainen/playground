@@ -1,6 +1,6 @@
 <p> Tinkering with lenses to deal with API changes. </p>
 
-<p> FIXME github url. </p>
+<p> Literate Haskell source for this post: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/lens-has">https://github.com/carlohamalainen/playground/tree/master/haskell/lens-has</a>. </p>
 
 <p> First, some extensions and imports. </p>
 

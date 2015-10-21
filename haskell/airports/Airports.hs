@@ -74,6 +74,7 @@ blinco = [ "BNE", "SYD", "ADL", "PER", "CNB", "NTL", "UDG", "CTL"
            , "STN", "LCY", "CDG", "TXL", "FRA", "MUC", "BCN", "BIO"
            , "FCO", "VCE", "MXP", "GVA", "CPH", "SVO", "LED", "HGK"
            , "HBA"
+           , "TPE", "SGN", "MNL"
            ]
 
 -- As a hash set for efficient membership testing.
