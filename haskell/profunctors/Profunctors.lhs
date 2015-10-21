@@ -1,4 +1,5 @@
-<p> Note to self about deriving the <code>Profunctor</code> typeclass. </p>
+<p> Note to self about deriving the <code>Profunctor</code> typeclass. Source is
+here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/profunctors">here</a>. </p>
 
 <p> This is a literate Haskell file, and it can be built
 using <a href="https://github.com/commercialhaskell/stack">Stack</a>: </p>
