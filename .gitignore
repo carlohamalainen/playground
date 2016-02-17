@@ -23,3 +23,5 @@ haskell/classy-mtl/cabal.sandbox.config
 haskell/classy-mtl/dist/*
 haskell/mvar/.stack-work/*
 haskell/profunctors/.stack-work/*
+haskell/prob-monad/cabal.sandbox.config
+haskell/prob-monad/dist/*
