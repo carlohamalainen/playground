@@ -1,0 +1,410 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+This note about zippers follows <a href="https://www.lri.fr/~filliatr/publis/enum2.pdf">Backtracking Iterators (Jean-Christophe Filliâtre)</a>. The paper has examples in OCaml but they translate to Haskell fairly directly.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Zipper</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Debug</span><span style="">.</span><span style="">Trace</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Test</span><span style="">.</span><span style="">QuickCheck</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Test</span><span style="">.</span><span style="">QuickCheck</span><span style="">.</span><span style="">Gen</span>
+</code></pre>
+<h3>
+A tree datatype
+</h3>
+<p>
+For our examples, we use a simple algebraic datatype, a balanced binary tree with integer labels for the nodes:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Tree</span> <span style="color: red;">=</span> <span style="">Empty</span> <span style="color: red;">|</span> <span style="">Node</span> <span style="">Tree</span> <span style="">Int</span> <span style="">Tree</span>
+<span style="">&gt;</span>           <span style="color: blue; font-weight: bold;">deriving</span> <span style="color: red;">(</span><span style="">Eq</span><span style="color: red;">,</span> <span style="">Show</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Here is an example tree:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">tree</span> <span style="color: red;">::</span> <span style="">Tree</span>
+<span style="">&gt;</span> <span style="">tree</span> <span style="color: red;">=</span> <span style="">Node</span>
+<span style="">&gt;</span>          <span style="color: red;">(</span><span style="">Node</span> <span style="">Empty</span> <span class="hs-num">1</span> <span style="">Empty</span><span style="color: red;">)</span>
+<span style="">&gt;</span>          <span class="hs-num">2</span>
+<span style="">&gt;</span>          <span style="color: red;">(</span><span style="">Node</span> <span style="">Empty</span> <span class="hs-num">3</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">Empty</span> <span class="hs-num">4</span> <span style="">Empty</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+We would normally draw this tree like this, with <code>E</code> for <code>Empty</code>:
+</p>
+<pre>
+      2
+     / \
+    /   \
+   1     3
+  / \   / \
+ E   E E   4
+          / \
+         E   E
+</pre>
+<p>
+Think about traversing the tree. At the beginning there is no path - we are at the top of the tree. Otherwise we have gone down the left subtree or the right subtree.
+</p>
+<p>
+If we went down the left branch at a node, we would have at hand the path that we followed to get to this node, the value at the node (an integer), and the tree on the right subtree that we did not visit.
+</p>
+<p>
+Start at the top of the tree:
+</p>
+<pre>
+path: Top (haven't gone anywhere)
+
+tree:
+      2
+     / \
+    /   \
+   1     3
+  / \   / \
+ E   E E   4
+          / \
+         E   E
+</pre>
+<p>
+Now walk down the left branch.
+</p>
+<pre>
+path: went left, have a 2, and the subtree
+      to the right of us is
+                                 3
+                                / \
+                               E   4
+                                  / \
+                                 E   E
+
+we are focused on this subtree:
+
+   1
+  / \
+ E   E
+
+</pre>
+<p>
+Encode this information in a type:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Path</span> <span style="color: red;">=</span> <span style="">Top</span>                      <span style="color: green;">-- ^ No path.</span>
+<span style="">&gt;</span>           <span style="color: red;">|</span> <span style="">WentLeft</span>  <span style="">Path</span> <span style="">Int</span> <span style="">Tree</span>  <span style="color: green;">-- ^ Followed the left subtree</span>
+<span style="">&gt;</span>           <span style="color: red;">|</span> <span style="">WentRight</span> <span style="">Tree</span> <span style="">Int</span> <span style="">Path</span>  <span style="color: green;">-- ^ Followed the right subtree</span>
+<span style="">&gt;</span>           <span style="color: blue; font-weight: bold;">deriving</span> <span style="color: red;">(</span><span style="">Eq</span><span style="color: red;">,</span> <span style="">Show</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+A zipper is a tree with a path.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Zipper</span> <span style="color: red;">=</span> <span style="">Zipper</span> <span style="">Tree</span> <span style="">Path</span>
+<span style="">&gt;</span>             <span style="color: blue; font-weight: bold;">deriving</span> <span style="color: red;">(</span><span style="">Eq</span><span style="color: red;">,</span> <span style="">Show</span><span style="color: red;">)</span>
+</code></pre>
+<h3>
+Working with zippers
+</h3>
+<p>
+The initial zipper is just the tree with no path.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">createZipper</span> <span style="color: red;">::</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">Zipper</span>
+<span style="">&gt;</span> <span style="">createZipper</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">Zipper</span> <span style="">t</span> <span style="">Top</span>
+</code></pre>
+<p>
+Conversely, if we have a zipper and we are at the top, we can get the tree out of it.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">unZipper</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span>
+<span style="">&gt;</span> <span style="">unZipper</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">Top</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">t</span>
+<span style="">&gt;</span> <span style="">unZipper</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">p</span><span style="color: red;">)</span>   <span style="color: red;">=</span> <span style="">error</span> <span style="">$</span> <span style="color: teal;">"Can't unZipper here, path is "</span> <span style="">++</span> <span style="">show</span> <span style="">p</span> <span style="">++</span> <span style="color: teal;">" with tree "</span> <span style="">++</span> <span style="">show</span> <span style="">t</span>
+</code></pre>
+<p>
+Intuitively, we would expect that <code>unZipper . createZipper = id</code>, and we can check this using <a href="https://hackage.haskell.org/package/QuickCheck-2.8.2/docs/Test-QuickCheck.html">QuickCheck</a>. First, provide an <code>instance</code> of <code>Arbitrary</code> for our binary trees:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Arbitrary</span> <span style="">Tree</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">arbitrary</span> <span style="color: red;">=</span> <span style="">frequency</span> <span style="color: red;">[</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">return</span> <span style="">Empty</span><span style="color: red;">)</span> <span style="color: green;">-- Empty</span>
+<span style="">&gt;</span>                         <span style="color: red;">,</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">arbNode</span><span style="color: red;">)</span>      <span style="color: green;">-- Node &lt;left&gt; &lt;n&gt; &lt;right&gt;</span>
+<span style="">&gt;</span>                         <span style="color: red;">]</span>
+<span style="">&gt;</span>       <span style="color: blue; font-weight: bold;">where</span> <span style="">arbNode</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">l</span> <span style="color: red;">&lt;-</span> <span style="">arbitrary</span>   <span style="color: green;">-- &lt;left&gt;</span>
+<span style="">&gt;</span>                          <span style="">n</span> <span style="color: red;">&lt;-</span> <span style="">arbitrary</span>   <span style="color: green;">-- &lt;n&gt;</span>
+<span style="">&gt;</span>                          <span style="">r</span> <span style="color: red;">&lt;-</span> <span style="">arbitrary</span>   <span style="color: green;">-- &lt;right&gt;</span>
+<span style="">&gt;</span>                          <span style="">return</span> <span style="">$</span> <span style="">Node</span> <span style="">l</span> <span style="">n</span> <span style="">r</span>
+</code></pre>
+<p>
+Now the property <code>unZipper . createZipper = id</code> can be written as:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_finish_createZipper</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">unZipper</span> <span style="color: red;">(</span><span style="">createZipper</span> <span style="">t</span><span style="color: red;">)</span> <span style="">==</span> <span style="">t</span>
+</code></pre>
+<p>
+Check it:
+</p>
+<pre>
+*Zipper> quickCheck prop_finish_create
++++ OK, passed 100 tests.
+</pre>
+<p>
+Looks good. Use <code>verboseCheck prop_finish_create</code> to see the values being generated.
+</p>
+<p>
+Back to the zipper. Walking into the left subtree, as in the example above, involves moving the focus to the left subtree, and noting the node and the right subtree in the path component.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">goDownLeft</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Zipper</span>
+<span style="">&gt;</span> <span style="">goDownLeft</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span>        <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">error</span> <span style="color: teal;">"Can't go down-left on an empty tree."</span>
+<span style="">&gt;</span> <span style="">goDownLeft</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="">p</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Zipper</span> <span style="">l</span> <span style="color: red;">(</span><span style="">WentLeft</span> <span style="">p</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Going down the right subtree is similar:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">goDownRight</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Zipper</span>
+<span style="">&gt;</span> <span style="">goDownRight</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span>        <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">error</span> <span style="color: teal;">"Can't go down-right on an empty tree."</span>
+<span style="">&gt;</span> <span style="">goDownRight</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="">p</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Zipper</span> <span style="">r</span> <span style="color: red;">(</span><span style="">WentRight</span> <span style="">l</span> <span style="">x</span> <span style="">p</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Going up is the inverse of <code>goDownLeft</code> and <code>goDownRight</code>.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">goUp</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Zipper</span>
+<span style="">&gt;</span> <span style="">goUp</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="">Top</span><span style="color: red;">)</span>           <span style="color: red;">=</span> <span style="">Zipper</span> <span style="">Empty</span> <span style="">Top</span>
+<span style="">&gt;</span> <span style="">goUp</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">l</span> <span style="color: red;">(</span><span style="">WentLeft</span>  <span style="">p</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Zipper</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="">p</span>
+<span style="">&gt;</span> <span style="">goUp</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">r</span> <span style="color: red;">(</span><span style="">WentRight</span> <span style="">l</span> <span style="">x</span> <span style="">p</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Zipper</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="">p</span>
+</code></pre>
+<p>
+And we might want to go all the way up:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">unzipZipper</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span>
+<span style="">&gt;</span> <span style="">unzipZipper</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">Top</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">t</span>
+<span style="">&gt;</span> <span style="">unzipZipper</span> <span style="">z</span>              <span style="color: red;">=</span> <span style="">unzipZipper</span> <span style="">$</span> <span style="">goUp</span> <span style="">z</span>
+</code></pre>
+<p>
+Now we’d like to check with QuickCheck that going down an arbitrary path through a tree, then going all the way back up should bring us back to the same tree. So we will have to create random trees, paired with random paths through those trees. A tuple of type <code>(Tree, Zipper)</code> could work, but runs into dramas with overlapping instances since QuickCheck provides an instance for types, namely <code>Arbitrary (a, b)</code>.
+</p>
+<p>
+As a work-around, make a data type that holds a tree and a zipper:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">TreeAndZipper</span> <span style="color: red;">=</span> <span style="">TreeAndZipper</span> <span style="">Tree</span> <span style="">Zipper</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">deriving</span> <span style="color: red;">(</span><span style="">Eq</span><span style="color: red;">,</span> <span style="">Show</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Here is the instance of <code>Arbitrary</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Arbitrary</span> <span style="">TreeAndZipper</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">arbitrary</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">t</span> <span style="color: red;">&lt;-</span> <span style="">arbitrary</span>                 <span style="color: green;">-- an arbitrary tree t</span>
+<span style="">&gt;</span>                  <span style="">p</span> <span style="color: red;">&lt;-</span> <span style="">arbPath</span> <span style="">$</span> <span style="">createZipper</span> <span style="">t</span>  <span style="color: green;">-- an arbitrary path in t</span>
+<span style="">&gt;</span>                  <span style="">return</span> <span style="">$</span> <span style="">TreeAndZipper</span> <span style="">t</span> <span style="">p</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>         <span style="">arbPath</span> <span style="">z</span><span style="color: red;">@</span><span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">p</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">frequency</span> <span style="color: red;">[</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">return</span> <span style="">z</span><span style="color: red;">)</span>    <span style="color: green;">-- stop here</span>
+<span style="">&gt;</span>                                            <span style="color: red;">,</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">arbPath'</span> <span style="">z</span><span style="color: red;">)</span>  <span style="color: green;">-- continue downwards</span>
+<span style="">&gt;</span>                                            <span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>         <span style="">arbPath'</span> <span style="">z</span><span style="color: red;">@</span><span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">return</span> <span style="">z</span>
+<span style="">&gt;</span>         <span style="">arbPath'</span> <span style="">z</span>                  <span style="color: red;">=</span> <span style="">frequency</span> <span style="color: red;">[</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">arbPath</span> <span style="">$</span> <span style="">goDownLeft</span>  <span style="">z</span><span style="color: red;">)</span>    <span style="color: green;">-- go down left</span>
+<span style="">&gt;</span>                                                 <span style="color: red;">,</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">arbPath</span> <span style="">$</span> <span style="">goDownRight</span> <span style="">z</span><span style="color: red;">)</span>    <span style="color: green;">-- go down right</span>
+<span style="">&gt;</span>                                                 <span style="color: red;">,</span> <span style="color: red;">(</span><span class="hs-num">1</span><span style="color: red;">,</span> <span style="">return</span> <span style="">z</span><span style="color: red;">)</span>                   <span style="color: green;">-- stop</span>
+<span style="">&gt;</span>                                                 <span style="color: red;">]</span>
+</code></pre>
+<p>
+Now with this instance we can encode the test that going down in a tree and then back up brings us back to the same tree.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_zip_unzip</span> <span style="color: red;">::</span> <span style="">TreeAndZipper</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_zip_unzip</span> <span style="color: red;">(</span><span style="">TreeAndZipper</span> <span style="">t</span> <span style="">z</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">t</span> <span style="">==</span> <span style="">unzipZipper</span> <span style="">z</span>
+</code></pre>
+<p>
+Check it:
+</p>
+<pre>
+*Zipper> quickCheck prop_zip_unzip
++++ OK, passed 100 tests.
+</pre>
+<p>
+Using <code>verboseCheck</code> we can see some of the values. Here is a sample:
+</p>
+<pre>
+(lots of output...)
+
+TreeAndZipper (Node (Node (Node (Node (Node (Node (Node Empty (-7) (Node (Node (Node (Node Empty 88 (Node Empty (-79) Empty)) 82 (Node (Node Empty (-20) Empty) (-15) (Node Empty (-94) Empty))) (-60) Empty) 55 (Node Empty 0 Empty))) 6 (Node Empty (-7) Empty)) (-18) (Node Empty (-80) (Node Empty 60 Empty))) (-35) (Node Empty (-73) Empty)) (-32) (Node (Node (Node (Node (Node Empty (-71) Empty) 30 (Node (Node Empty 0 Empty) (-68) (Node Empty 91 Empty))) 1 (Node Empty (-46) (Node Empty (-41) (Node (Node Empty 93 Empty) 79 (Node (Node Empty 48 (Node (Node Empty 46 Empty) 76 (Node (Node Empty (-57) (Node Empty 90 Empty)) 34 (Node Empty (-11) (Node Empty (-10) Empty))))) 55 (Node Empty 65 (Node (Node (Node (Node Empty 2 (Node Empty 11 (Node Empty 34 Empty))) (-69) Empty) 68 Empty) 49 (Node Empty (-67) (Node (Node Empty 73 (Node Empty 59 (Node (Node Empty (-28) Empty) (-22) Empty))) (-15) Empty))))))))) 39 (Node Empty 40 (Node (Node (Node (Node Empty 88 Empty) 60 Empty) (-87) Empty) 53 Empty))) (-43) (Node Empty (-16) Empty))) 54 (Node Empty 73 Empty)) (-31) Empty) (Zipper (Node (Node (Node (Node (Node (Node Empty (-7) (Node (Node (Node (Node Empty 88 (Node Empty (-79) Empty)) 82 (Node (Node Empty (-20) Empty) (-15) (Node Empty (-94) Empty))) (-60) Empty) 55 (Node Empty 0 Empty))) 6 (Node Empty (-7) Empty)) (-18) (Node Empty (-80) (Node Empty 60 Empty))) (-35) (Node Empty (-73) Empty)) (-32) (Node (Node (Node (Node (Node Empty (-71) Empty) 30 (Node (Node Empty 0 Empty) (-68) (Node Empty 91 Empty))) 1 (Node Empty (-46) (Node Empty (-41) (Node (Node Empty 93 Empty) 79 (Node (Node Empty 48 (Node (Node Empty 46 Empty) 76 (Node (Node Empty (-57) (Node Empty 90 Empty)) 34 (Node Empty (-11) (Node Empty (-10) Empty))))) 55 (Node Empty 65 (Node (Node (Node (Node Empty 2 (Node Empty 11 (Node Empty 34 Empty))) (-69) Empty) 68 Empty) 49 (Node Empty (-67) (Node (Node Empty 73 (Node Empty 59 (Node (Node Empty (-28) Empty) (-22) Empty))) (-15) Empty))))))))) 39 (Node Empty 40 (Node (Node (Node (Node Empty 88 Empty) 60 Empty) (-87) Empty) 53 Empty))) (-43) (Node Empty (-16) Empty))) 54 (Node Empty 73 Empty)) (WentLeft Top (-31) Empty))
+Passed:
+TreeAndZipper (Node Empty (-33) Empty) (Zipper (Node Empty (-33) Empty) Top)
+Passed:
+TreeAndZipper Empty (Zipper Empty Top)
+Passed:
+TreeAndZipper (Node Empty (-95) Empty) (Zipper (Node Empty (-95) Empty) Top)
++++ OK, passed 100 tests.
+</pre>
+<h3>
+Traversals with a zipper
+</h3>
+<p>
+A nifty thing about zippers is that we can use them to step through a traversal, controlling the process programatically. If we are walking through a tree, we might be finished, or we have produced a value (an <code>Int</code>) but need to keep going through the zipper:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Step</span> <span style="color: red;">=</span> <span style="">Finished</span>
+<span style="">&gt;</span>           <span style="color: red;">|</span> <span style="">KeepGoing</span> <span style="">Int</span> <span style="">Zipper</span>
+<span style="">&gt;</span>           <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<p>
+The <code>step</code> function converts a zipper into this state (step) type:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">step</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Step</span>
+</code></pre>
+<p>
+If we have an empty tree and no path, we are done.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="">Top</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Finished</span>
+</code></pre>
+<p>
+If we have gone down-left, make note of the node’s value <code>x</code> and the rest of the zipper:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="color: red;">(</span><span style="">WentLeft</span>  <span style="">p</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">KeepGoing</span> <span style="">x</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">r</span> <span style="">p</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Otherwise, we have a tree and a path, so try to continue by going down-left:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">p</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">step</span> <span style="">$</span> <span style="">goDownLeft</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">p</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+In summary:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">step</span> <span style="color: red;">::</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">Step</span>
+<span style="">&gt;</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="">Top</span><span style="color: red;">)</span>               <span style="color: red;">=</span> <span style="">Finished</span>
+<span style="">&gt;</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="color: red;">(</span><span style="">WentLeft</span>  <span style="">p</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">KeepGoing</span> <span style="">x</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">r</span> <span style="">p</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">p</span><span style="color: red;">)</span>                     <span style="color: red;">=</span> <span style="">step</span> <span style="">$</span> <span style="">goDownLeft</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">p</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+By repeatedly applying <code>step</code> we get an inorder traversal of the tree:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">inorder</span> <span style="color: red;">::</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">inorder</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">runStep</span> <span style="color: red;">(</span><span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">Top</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="">[]</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="color: red;">::</span> <span style="">Step</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="">Finished</span>                    <span style="">acc</span> <span style="color: red;">=</span> <span style="">acc</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="color: red;">(</span><span style="">KeepGoing</span> <span style="">x</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t'</span> <span style="">p</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="">acc</span> <span style="color: red;">=</span> <span style="">runStep</span> <span style="color: red;">(</span><span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t'</span> <span style="">p</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">acc</span> <span style="">++</span> <span style="color: red;">[</span><span style="">x</span><span style="color: red;">]</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+(As an aside, <code>runStep</code> is tail recursive.)
+</p>
+<p>
+Using <code>inorder</code> on our example tree:
+</p>
+<pre>
+*Zipper> inorder tree
+[1,2,3,4]
+</pre>
+<p>
+Here is a plain recursive definition of an inorder traversal:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">inorder'</span> <span style="color: red;">::</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">inorder'</span> <span style="">Empty</span> <span style="color: red;">=</span> <span style="">[]</span>
+<span style="">&gt;</span> <span style="">inorder'</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">inorder'</span> <span style="">l</span> <span style="">++</span> <span style="color: red;">[</span><span style="">x</span><span style="color: red;">]</span> <span style="">++</span> <span style="">inorder'</span> <span style="">r</span>
+</code></pre>
+<p>
+We can use this to verify that our fancy zipper inorder traversal is correct:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_inorder</span> <span style="color: red;">::</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_inorder</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">inorder</span> <span style="">t</span> <span style="">==</span> <span style="">inorder'</span> <span style="">t</span>
+</code></pre>
+<p>
+Testing it:
+</p>
+<pre>
+*Zipper> quickCheck prop_inorder
++++ OK, passed 100 tests.
+</pre>
+<p>
+If we want to do something different in the traversal, for example running a monadic action, we can use the same <code>Step</code> datatype and change the definition of <code>runStep</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">inorderM</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">inorderM</span> <span style="">a</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">runStepM</span> <span style="">a</span> <span style="">$</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t</span> <span style="">Top</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">runStepM</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Step</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span>     <span style="">runStepM</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">Finished</span>                    <span style="color: red;">=</span> <span style="">return</span> <span style="">()</span>
+<span style="">&gt;</span>     <span style="">runStepM</span> <span style="">a</span> <span style="color: red;">(</span><span style="">KeepGoing</span> <span style="">x</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t'</span> <span style="">p</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">a</span> <span style="">x</span><span style="color: red;">)</span> <span style="">&gt;&gt;</span> <span style="color: red;">(</span><span style="">runStepM</span> <span style="">a</span> <span style="">$</span> <span style="">step</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">t'</span> <span style="">p</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Example usage:
+</p>
+<pre>
+*Zipper> inorderM (\x -> putStrLn $ "Node value: " ++ show x) tree
+Node value: 1
+Node value: 2
+Node value: 3
+Node value: 4
+</pre>
+<h3>
+Mapping over a tree
+</h3>
+<p>
+If we want to apply a function to each value in a tree, a recursive definition might be:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">mapTree</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span>
+<span style="">&gt;</span> <span style="">mapTree</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">Empty</span> <span style="color: red;">=</span> <span style="">Empty</span>
+<span style="">&gt;</span> <span style="">mapTree</span> <span style="">f</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Node</span> <span style="color: red;">(</span><span style="">mapTree</span> <span style="">f</span> <span style="">l</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">f</span> <span style="">x</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">mapTree</span> <span style="">f</span> <span style="">r</span><span style="color: red;">)</span>
+</code></pre>
+<pre>
+*Zipper> tree
+Node (Node Empty 1 Empty) 2 (Node Empty 3 (Node Empty 4 Empty))
+
+*Zipper> mapTree (+1) tree
+Node (Node Empty 2 Empty) 3 (Node Empty 4 (Node Empty 5 Empty))
+</pre>
+<p>
+We can check that <code>mapTree id == mapTree</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_maptree</span> <span style="color: red;">::</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_maptree</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">t</span> <span style="">==</span> <span style="color: red;">(</span><span style="">mapTree</span> <span style="">id</span> <span style="">t</span><span style="color: red;">)</span>
+</code></pre>
+<pre>
+*Zipper> quickCheck prop_maptree
++++ OK, passed 100 tests.
+</pre>
+<p>
+We can also use a zipper to map over the tree by using a different data type to represent the stepping:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">MapStep</span> <span style="color: red;">=</span> <span style="">MapFinished</span>
+<span style="">&gt;</span>              <span style="color: red;">|</span> <span style="">MoreL</span> <span style="">Int</span> <span style="">Zipper</span>
+<span style="">&gt;</span>              <span style="color: red;">|</span> <span style="">More2</span> <span style="">Zipper</span> <span style="">Int</span> <span style="">Zipper</span>
+<span style="">&gt;</span>              <span style="color: blue; font-weight: bold;">deriving</span> <span style="">Show</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">stepMap</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Zipper</span> <span style="color: red;">-&gt;</span> <span style="">MapStep</span>
+<span style="">&gt;</span> <span style="">stepMap</span> <span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="">Top</span>              <span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">MapFinished</span>
+<span style="">&gt;</span> <span style="">stepMap</span> <span style="">f</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">Empty</span> <span style="color: red;">(</span><span style="">WentLeft</span>  <span style="">p</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">MoreL</span> <span style="color: red;">(</span><span style="">f</span> <span style="">x</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">r</span> <span style="">p</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">stepMap</span> <span style="">f</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="color: red;">(</span><span style="">Node</span> <span style="">l</span> <span style="">x</span> <span style="">r</span><span style="color: red;">)</span> <span style="">p</span><span style="color: red;">)</span>          <span style="color: red;">=</span> <span style="">More2</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">l</span> <span style="">p</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">f</span> <span style="">x</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">Zipper</span> <span style="">r</span> <span style="">p</span><span style="color: red;">)</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">mapTree'</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span>
+<span style="">&gt;</span> <span style="">mapTree'</span> <span style="">f</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">runStep</span> <span style="color: red;">(</span><span style="">stepMap</span> <span style="">f</span> <span style="">$</span> <span style="">Zipper</span> <span style="">t</span> <span style="">Top</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="color: red;">::</span> <span style="">MapStep</span> <span style="color: red;">-&gt;</span> <span style="">Tree</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="">MapFinished</span>     <span style="color: red;">=</span> <span style="">Empty</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="color: red;">(</span><span style="">MoreL</span> <span style="">x</span> <span style="">z</span><span style="color: red;">)</span>     <span style="color: red;">=</span> <span style="">Node</span> <span style="">Empty</span> <span style="">x</span> <span style="color: red;">(</span><span style="">runStep</span> <span style="">$</span> <span style="">stepMap</span> <span style="">f</span> <span style="">z</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">runStep</span> <span style="color: red;">(</span><span style="">More2</span> <span style="">zl</span> <span style="">x</span> <span style="">zr</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Node</span> <span style="color: red;">(</span><span style="">runStep</span> <span style="">$</span> <span style="">stepMap</span> <span style="">f</span> <span style="">zl</span><span style="color: red;">)</span> <span style="">x</span> <span style="color: red;">(</span><span style="">runStep</span> <span style="">$</span> <span style="">stepMap</span> <span style="">f</span> <span style="">zr</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Testing it:
+</p>
+<pre>
+*Zipper> tree
+Node (Node Empty 1 Empty) 2 (Node Empty 3 (Node Empty 4 Empty))
+
+*Zipper> mapTree' (+1) tree
+Node (Node Empty 2 Empty) 3 (Node Empty 4 (Node Empty 5 Empty))
+</pre>
+<p>
+And testing it using QuickCheck:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_maptree'</span> <span style="color: red;">::</span> <span style="">Tree</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_maptree'</span> <span style="">t</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">mapTree</span> <span style="color: red;">(</span><span style="">+</span><span class="hs-num">1</span><span style="color: red;">)</span> <span style="">t</span><span style="color: red;">)</span> <span style="">==</span> <span style="color: red;">(</span><span style="">mapTree'</span> <span style="color: red;">(</span><span style="">+</span><span class="hs-num">1</span><span style="color: red;">)</span> <span style="">t</span><span style="color: red;">)</span>
+</code></pre>
+<pre>
+*Zipper> quickCheck prop_maptree'
++++ OK, passed 100 tests.
+</pre>
+<p>
+The <code>Main.hs</code> file runs more tests:
+</p>
+<pre>
+$ ghc --make Main.hs
+[1 of 2] Compiling Zipper           ( Zipper.lhs, Zipper.o )
+[2 of 2] Compiling Main             ( Main.hs, Main.o )
+Linking Main ...
+
+$ time ./Main
+
+</pre>
+<div id="refs" class="references">
+
+</div>
