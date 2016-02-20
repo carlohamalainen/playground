@@ -5,8 +5,12 @@
 </head>
 
 <p>
-This note about zippers follows <a href="https://www.lri.fr/~filliatr/publis/enum2.pdf">Backtracking Iterators (Jean-Christophe Filliâtre)</a>. The paper has examples in OCaml but they translate to Haskell fairly directly.
+This note about zippers follows <a href="https://www.lri.fr/~filliatr/publis/enum2.pdf">Backtracking Iterators (Jean-Christophe Filliâtre)</a>. The paper has examples in OCaml but they translate to Haskell fairly directly. Literate Haskell source for this post is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/zipper">https://github.com/carlohamalainen/playground/tree/master/haskell/zipper</a>. To run this file, first install QuickCheck:
 </p>
+<pre>
+cabal update
+cabal install QuickCheck
+</pre>
 <pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Zipper</span> <span style="color: blue; font-weight: bold;">where</span>
 <span style="">&gt;</span> 
 <span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Debug</span><span style="">.</span><span style="">Trace</span>

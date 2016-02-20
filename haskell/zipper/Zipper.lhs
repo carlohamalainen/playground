@@ -1,5 +1,6 @@
 <p> This note about zippers follows <a href="https://www.lri.fr/~filliatr/publis/enum2.pdf">Backtracking Iterators (Jean-Christophe Filliâtre)</a>. The paper
 has examples in OCaml but they translate to Haskell fairly directly.
+Literate Haskell source for this post is here: <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/zipper">https://github.com/carlohamalainen/playground/tree/master/haskell/zipper</a>.
 To run this file, first install QuickCheck: </p>
 
 <pre>
