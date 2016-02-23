@@ -382,7 +382,7 @@ Node (Node Empty 2 Empty) 3 (Node Empty 4 (Node Empty 5 Empty))
 +++ OK, passed 100 tests.
 </pre>
 
-<p> The <code>Main.hs</code> file runs more tests: </p>
+<p> The <code>Main.hs</code> file runs all the tests: </p>
 
 <pre>
 $ ghc --make Main.hs
@@ -390,7 +390,15 @@ $ ghc --make Main.hs
 [2 of 2] Compiling Main             ( Main.hs, Main.o )
 Linking Main ...
 
-$ time ./Main
-
+$ ./Main
+prop_finish_createZipper
++++ OK, passed 100 tests.
+prop_inorder
++++ OK, passed 100 tests.
+prop_maptree
++++ OK, passed 100 tests.
+prop_maptree'
++++ OK, passed 100 tests.
+prop_zip_unzip
++++ OK, passed 100 tests.
 </pre>
-

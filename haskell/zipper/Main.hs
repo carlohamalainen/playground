@@ -6,7 +6,7 @@ import Test.QuickCheck
 import Zipper
 
 quickCheckMany :: forall a. (Arbitrary a, Show a) => (a -> Bool) -> IO ()
-quickCheckMany = quickCheckWith stdArgs { maxSuccess = 1000 }
+quickCheckMany = quickCheckWith stdArgs { maxSuccess = 100 }
 
 main :: IO ()
 main = do
