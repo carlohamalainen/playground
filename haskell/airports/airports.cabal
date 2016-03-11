@@ -20,11 +20,11 @@ executable airports
   -- other-modules:
   -- other-extensions:
   ghc-options:       -O2 -threaded -rtsopts
-  build-depends:       base >=4.6 && <4.7
-                     , deepseq >=1.3 && <1.4
-                     , parallel >=3.2 && <3.3
-                     , split >=0.2 && <0.3
-                     , hashable >=1.2 && <1.3
+  build-depends:       base
+                     , deepseq
+                     , parallel
+                     , split
+                     , hashable
                      , hashmap
   -- hs-source-dirs:
   default-language:    Haskell2010

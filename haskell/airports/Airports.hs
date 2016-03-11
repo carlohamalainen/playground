@@ -63,19 +63,32 @@ uniq = HS.toList . HS.fromList
 
 -- Airports that Blinco has been to.
 blinco :: [String]
-blinco = [ "BNE", "SYD", "ADL", "PER", "CNB", "NTL", "UDG", "CTL"
-           , "ULP", "TWB", "WNR", "BVI", "LRE", "EMD", "BLT", "THG"
-           , "ROK", "MKY", "PPP", "TSV", "CNS", "HID", "SIN", "NRT"
-           , "PVG", "BKK", "CNX", "KBV", "BOM", "DEL", "UDR", "AMM"
-           , "BWN", "AKL", "CHC", "ZQN", "LAX", "SFO", "SLC", "LAS"
-           , "ORD", "BMI", "JFK", "IAD", "ATL", "BHN", "DEN", "STL"
-           , "SJU", "MEX", "SJO", "LIM", "LPB", "SCL", "PMO", "PUQ"
-           , "ZCO", "EZE", "MDZ", "AEP", "COR", "MVD", "LHR", "LGW"
-           , "STN", "LCY", "CDG", "TXL", "FRA", "MUC", "BCN", "BIO"
-           , "FCO", "VCE", "MXP", "GVA", "CPH", "SVO", "LED", "HGK"
-           , "HBA"
-           , "TPE", "SGN", "MNL"
-           ]
+blinco = [ "BNE", "CNS", "SYD", "TSV", "NTL"
+         , "CTL", "ULP", "MKY", "UDG", "EMD"
+         , "ROK", "PPP", "HID", "CNB"
+         , "PER", "BLT", "THG", "ADL"
+         , "TWB", "WNR", "BVI", "LRE"
+         , "HBA", "MEL", "SIN", "NRT"
+         , "PVG", "HKG", "TPE", "SGN"
+         , "MNL", "BKK", "CNX", "KBV"
+         , "BOM", "DEL", "UDR", "AMM"
+         , "AUH", "DXB", "RUH", "CAI"
+         , "BWN", "AKL", "CHC", "ZQN"
+         , "SFO", "LAS", "BMI", "JFK"
+         , "IAD", "ATL", "BHN", "DEN"
+         , "LAX", "ORD", "SLC", "STL"
+         , "EWR", "LGA", "DFW", "SAT"
+         , "BWI", "DCA", "MSP", "CLE"
+         , "SEA", "FAT", "SJU", "MEX"
+         , "SJO", "LIM", "LPB", "SCL"
+         , "PMO", "PUQ", "ZCO", "EZE"
+         , "MDZ", "AEP", "COR", "MVD"
+         , "BOG", "LHR", "LGW", "STN"
+         , "LCY", "CDG", "TXL", "FRA"
+         , "MUC", "BCN", "BIO", "FCO"
+         , "VCE", "MXP", "GVA", "CPH"
+         , "SVO", "LED"
+         ]
 
 -- As a hash set for efficient membership testing.
 blinco' :: HS.Set String
