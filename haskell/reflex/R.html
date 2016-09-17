@@ -1,0 +1,262 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+When I post a series of photos to a personal blog I find myself editing HTML in Vim and switching back and forth to a browser to see if I have written comments in the right places and ordered the photos correctly. I could use a HTML editor to do this, but why not try FRP with Haskell? :) Apparently I sort of use FRP <a href="https://www.reddit.com/r/haskell/comments/41icy5/haskell_developer_roles_at_standard_chartered/cz37u9f">at work</a> so trying out <a href="https://github.com/reflex-frp/reflex-platform">Reflex</a> wasn’t too much of a leap.
+</p>
+<p>
+This post is adapted from the <a href="https://github.com/reflex-frp/reflex-examples/tree/master/BasicTodo">todo list</a> and <a href="https://github.com/reflex-frp/reflex-examples/tree/master/drag-and-drop">drag ‘n’ drop</a> examples in <a href="https://github.com/reflex-frp/reflex-examples">this Reflex repo</a>.
+</p>
+<p>
+Let’s start with the types. My basic blob of data is an image (a URL), a comment about the image, and a flag to indicate if the image should appear in the final output:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Image</span> <span style="color: red;">=</span> <span style="">Image</span>
+<span style="">&gt;</span>     <span style="color: red;">{</span> <span style="">imageFileName</span> <span style="color: red;">::</span> <span style="">T</span><span style="">.</span><span style="">Text</span>   <span style="color: green;">-- ^ e.g. "file:///tmp/cat.jpg"</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span style="">imageVisible</span>  <span style="color: red;">::</span> <span style="">Bool</span>     <span style="color: green;">-- ^ Output in HTML render?</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span style="">imageRemark</span>   <span style="color: red;">::</span> <span style="">T</span><span style="">.</span><span style="">Text</span>   <span style="color: green;">-- ^ Comment that goes before the image.</span>
+<span style="">&gt;</span>     <span style="color: red;">}</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">deriving</span> <span style="color: red;">(</span><span style="">Eq</span><span style="color: red;">,</span> <span style="">Ord</span><span style="color: red;">,</span> <span style="">Show</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+The images have to be rendered in a particular order, so we’ll use a <code>Map</code>
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">a</span>
+</code></pre>
+<p>
+where the integer keys provide the ordering and <code>a</code> is some type.
+</p>
+<p>
+To toggle visibility in the final rendering, we flip <code>imageVisible</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">toggleVisibility</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span>
+<span style="">&gt;</span> <span style="">toggleVisibility</span> <span style="">k</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">M</span><span style="">.</span><span style="">adjust</span> <span style="">f</span> <span style="">k</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="color: red;">(</span><span style="">Image</span> <span style="">x</span> <span style="">b</span> <span style="">c</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Image</span> <span style="">x</span> <span style="color: red;">(</span><span style="">not</span> <span style="">b</span><span style="color: red;">)</span> <span style="">c</span>
+</code></pre>
+<p>
+We can set the description for an image:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">setDesc</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Int</span><span style="color: red;">,</span> <span style="">T</span><span style="">.</span><span style="">Text</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span>
+<span style="">&gt;</span> <span style="">setDesc</span> <span style="color: red;">(</span><span style="">k</span><span style="color: red;">,</span> <span style="">c</span><span style="color: red;">)</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">M</span><span style="">.</span><span style="">adjust</span> <span style="">f</span> <span style="">k</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="color: red;">(</span><span style="">Image</span> <span style="">x</span> <span style="">b</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">Image</span> <span style="">x</span> <span style="">b</span> <span style="">c</span>
+</code></pre>
+<p>
+We can move the <code>k</code>th image up:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">moveUp</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span>
+<span style="">&gt;</span> <span style="">moveUp</span> <span class="hs-num">0</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">m</span>
+<span style="">&gt;</span> <span style="">moveUp</span> <span style="">k</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="">M</span><span style="">.</span><span style="">elems</span> <span style="">m</span> <span style="color: blue; font-weight: bold;">in</span>
+<span style="">&gt;</span>     <span style="">M</span><span style="">.</span><span style="">fromList</span> <span style="">$</span> <span style="">zip</span> <span style="color: red;">[</span><span class="hs-num">0</span><span style="color: red;">..</span><span style="color: red;">]</span> <span style="">$</span> <span style="">take</span> <span style="color: red;">(</span><span style="">k</span><span style="color: green;">-</span><span class="hs-num">1</span><span style="color: red;">)</span> <span style="">xs</span> <span style="">++</span> <span style="color: red;">[</span><span style="">xs</span> <span style="">!!</span> <span style="">k</span><span style="color: red;">,</span> <span style="">xs</span> <span style="">!!</span> <span style="color: red;">(</span><span style="">k</span><span style="color: green;">-</span><span class="hs-num">1</span><span style="color: red;">)</span><span style="color: red;">]</span> <span style="">++</span> <span style="">drop</span> <span style="color: red;">(</span><span style="">k</span><span style="">+</span><span class="hs-num">1</span><span style="color: red;">)</span> <span style="">xs</span>
+<span style="">&gt;</span>     <span style="color: green;">-- ^^^ Assumes contiguous keys!</span>
+</code></pre>
+<p>
+and down:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">moveDown</span> <span style="color: red;">::</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">Int</span> <span style="">Image</span>
+<span style="">&gt;</span> <span style="">moveDown</span> <span style="">k</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: red;">|</span> <span style="">k</span> <span style="">==</span> <span style="">fst</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">findMax</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: red;">|</span> <span style="">otherwise</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="">M</span><span style="">.</span><span style="">elems</span> <span style="">m</span> <span style="color: blue; font-weight: bold;">in</span>
+<span style="">&gt;</span>       <span style="">M</span><span style="">.</span><span style="">fromList</span> <span style="">$</span> <span style="">zip</span> <span style="color: red;">[</span><span class="hs-num">0</span><span style="color: red;">..</span><span style="color: red;">]</span> <span style="">$</span> <span style="">take</span> <span style="">k</span> <span style="">xs</span> <span style="">++</span> <span style="color: red;">[</span><span style="">xs</span> <span style="">!!</span> <span style="color: red;">(</span><span style="">k</span><span style="">+</span><span class="hs-num">1</span><span style="color: red;">)</span><span style="color: red;">,</span> <span style="">xs</span> <span style="">!!</span> <span style="">k</span><span style="color: red;">]</span> <span style="">++</span> <span style="">drop</span> <span style="color: red;">(</span><span style="">k</span><span style="">+</span><span class="hs-num">2</span><span style="color: red;">)</span> <span style="">xs</span>
+</code></pre>
+<p>
+It’s not efficient to completely rebuild the map by converting it to a list and back again, but this’ll do for now.
+</p>
+<p>
+In terms of the user interface there are a few events to consider:
+</p>
+<p>
+<ul>
+<li>
+user toggles visibility of the <code>k</code>th image;
+</li>
+<li>
+user moves the <code>k</code>th image up;
+</li>
+<li>
+user moves the <code>k</code>th image down; and
+</li>
+<li>
+user changes the comment text for the <code>k</code>th image.
+</li>
+</ul>
+</p>
+<p>
+We’ll put these four events into our own type. The first three are of type <code>Event t Int</code> where the <code>Int</code> is the key for the image in question. The last one has type <code>Event t (Int, T.Text)</code> since we need the key and the text that was entered into the textbox. In Reflex, the event type is <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#t:Event">Event</a>.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">ImageEvent</span> <span style="">t</span> <span style="color: red;">=</span> <span style="">ImageEvent</span>
+<span style="">&gt;</span>     <span style="color: red;">{</span> <span style="">evToggle</span>  <span style="color: red;">::</span> <span style="">Event</span> <span style="">t</span> <span style="">Int</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span style="">evUp</span>      <span style="color: red;">::</span> <span style="">Event</span> <span style="">t</span> <span style="">Int</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span style="">evDown</span>    <span style="color: red;">::</span> <span style="">Event</span> <span style="">t</span> <span style="">Int</span>
+<span style="">&gt;</span>     <span style="color: red;">,</span> <span style="">evKey</span>     <span style="color: red;">::</span> <span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Int</span><span style="color: red;">,</span> <span style="">T</span><span style="">.</span><span style="">Text</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="color: red;">}</span>
+</code></pre>
+<p>
+Next, <code>imageW</code> creates an unnumbered list of images, consisting of a text field indicating if the image will be visible; a text box for writing a comment; buttons to toggle visibility and move the image up and down; and finally the image itself.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">imageW</span>
+<span style="">&gt;</span>     <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">m</span> <span style="">t</span><span style="">.</span> <span style="color: red;">(</span><span style="">MonadWidget</span> <span style="">t</span> <span style="">m</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="color: red;">=&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">(</span><span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Map</span> <span style="">Int</span> <span style="color: red;">(</span><span style="">ImageEvent</span> <span style="">t</span><span style="color: red;">)</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">imageW</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="">elClass</span> <span style="color: teal;">"ul"</span> <span style="color: teal;">"list"</span> <span style="">$</span> <span style="">listWithKey</span> <span style="">xs</span> <span style="">$</span> <span style="color: red;">\</span><span style="">k</span> <span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">elClass</span> <span style="color: teal;">"li"</span> <span style="color: teal;">"element"</span> <span style="">$</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">dynText</span> <span style="">$</span> <span style="">fmap</span> <span style="color: red;">(</span><span style="">T</span><span style="">.</span><span style="">pack</span> <span style="">.</span> <span style="">show</span> <span style="">.</span> <span style="">imageVisible</span><span style="color: red;">)</span> <span style="">x</span>
+<span style="">&gt;</span>     <span style="">el</span> <span style="color: teal;">"br"</span> <span style="">$</span> <span style="">return</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">let</span> <span style="">xEvent</span> <span style="color: red;">=</span> <span style="">imageRemark</span> <span style="">&lt;$&gt;</span> <span style="">uniqDyn</span> <span style="">x</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">ti</span> <span style="color: red;">&lt;-</span> <span style="">textInput</span> <span style="">$</span> <span style="">textBoxAttrs</span> <span style="">&amp;</span> <span style="">setValue</span> <span style="">.~</span> <span style="color: red;">(</span><span style="">updated</span> <span style="">xEvent</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">tEvent</span> <span style="color: red;">&lt;-</span> <span style="">updated</span> <span style="">&lt;$&gt;</span> <span style="">return</span> <span style="color: red;">(</span><span style="">zipDynWith</span> <span style="">(,)</span> <span style="color: red;">(</span><span style="">constDyn</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">(</span><span class="hs-sel">_textInput_value</span> <span style="">ti</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">el</span> <span style="color: teal;">"br"</span> <span style="">$</span> <span style="">return</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">visibleEvent</span><span style="color: red;">,</span> <span style="">moveUpEvent</span><span style="color: red;">,</span> <span style="">moveDownEvent</span><span style="color: red;">)</span> <span style="color: red;">&lt;-</span> <span style="">elClass</span> <span style="color: teal;">"div"</span> <span style="color: teal;">"my buttons"</span> <span style="">$</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>                                                     <span style="">visibleEvent</span>  <span style="color: red;">&lt;-</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">const</span> <span style="">k</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">button</span> <span style="color: teal;">"visible"</span>
+<span style="">&gt;</span>                                                     <span style="">moveUpEvent</span>   <span style="color: red;">&lt;-</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">const</span> <span style="">k</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">button</span> <span style="color: teal;">"up"</span>
+<span style="">&gt;</span>                                                     <span style="">moveDownEvent</span> <span style="color: red;">&lt;-</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">const</span> <span style="">k</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">button</span> <span style="color: teal;">"down"</span>
+<span style="">&gt;</span>                                                     <span style="">return</span> <span style="color: red;">(</span><span style="">visibleEvent</span><span style="color: red;">,</span> <span style="">moveUpEvent</span><span style="color: red;">,</span> <span style="">moveDownEvent</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">elClass</span> <span style="color: teal;">"p"</span> <span style="color: teal;">"the image"</span> <span style="">$</span> <span style="">elDynAttr</span> <span style="color: teal;">"img"</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">f</span> <span style="">x</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">return</span> <span style="">()</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">return</span> <span style="">$</span> <span style="">ImageEvent</span> <span style="">visibleEvent</span> <span style="">moveUpEvent</span> <span style="">moveDownEvent</span> <span style="">tEvent</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">f</span> <span style="color: red;">::</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">Map</span> <span style="">T</span><span style="">.</span><span style="">Text</span> <span style="">T</span><span style="">.</span><span style="">Text</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="">i</span> <span style="color: red;">=</span> <span style="">M</span><span style="">.</span><span style="">fromList</span>
+<span style="">&gt;</span>             <span style="color: red;">[</span> <span style="color: red;">(</span><span style="color: teal;">"src"</span><span style="color: red;">,</span>   <span style="">imageFileName</span> <span style="">i</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="color: red;">(</span><span style="color: teal;">"width"</span><span style="color: red;">,</span> <span style="color: teal;">"500"</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">textBoxAttrs</span> <span style="color: red;">::</span> <span style="">TextInputConfig</span> <span style="">t</span>
+<span style="">&gt;</span>     <span style="">textBoxAttrs</span> <span style="color: red;">=</span> <span style="">def</span> <span style="color: red;">{</span> <span class="hs-sel">_textInputConfig_attributes</span> <span style="color: red;">=</span> <span style="">constDyn</span> <span style="">$</span> <span style="">M</span><span style="">.</span><span style="">fromList</span> <span style="color: red;">[</span><span style="color: red;">(</span><span style="color: teal;">"size"</span><span style="color: red;">,</span> <span style="color: teal;">"100"</span><span style="color: red;">)</span><span style="color: red;">]</span> <span style="color: red;">}</span>
+</code></pre>
+<p>
+<p>To process the dynamic map we use <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Dom-Widget-Basic.html#v:listWithKey">listWithKey</a>:</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">listWithKey</span>
+<span style="">&gt;</span>   <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">t</span> <span style="">k</span> <span style="">v</span> <span style="">m</span> <span style="">a</span><span style="">.</span> <span style="color: red;">(</span><span style="">Ord</span> <span style="">k</span><span style="color: red;">,</span> <span style="">MonadWidget</span> <span style="">t</span> <span style="">m</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: red;">=&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Map</span> <span style="">k</span> <span style="">v</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">k</span> <span style="color: red;">-&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="">v</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">(</span><span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Map</span> <span style="">k</span> <span style="">a</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Specialised to our usage, the type is:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">listWithKey</span>
+<span style="">&gt;</span>   <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">t</span> <span style="">m</span><span style="">.</span> <span style="color: red;">(</span><span style="">MonadWidget</span> <span style="">t</span> <span style="">m</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: red;">=&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">(</span><span style="">ImageEvent</span> <span style="">t</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">(</span><span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Map</span> <span style="">Int</span> <span style="color: red;">(</span><span style="">ImageEvent</span> <span style="">t</span><span style="color: red;">)</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+It’s like mapping over the elements of the dynamic input:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">listWithKey</span> <span style="">xs</span> <span style="">$</span> <span style="color: red;">\</span><span style="">k</span> <span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">...</span>
+</code></pre>
+<p>
+We use <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Dom-Widget-Basic.html#v:elClass">elClass</a> to produce the elements on the page. For example the text attribute showing if the image is visible or not can be rendered using <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Dom-Widget-Basic.html#v:dynText">dynText</a>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span>     <span style="">dynText</span> <span style="">$</span> <span style="">fmap</span> <span style="color: red;">(</span><span style="">T</span><span style="">.</span><span style="">pack</span> <span style="">.</span> <span style="">show</span> <span style="">.</span> <span style="">imageVisible</span><span style="color: red;">)</span> <span style="">x</span>
+</code></pre>
+<p>
+We have an <code>fmap</code> since <code>x :: Dynamic t Image</code> and <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Dynamic.html#t:Dynamic">Dynamic</a> has a <code>Functor</code> instance.
+</p>
+<p>
+The image list and all the events are wrapped up in <code>imageListW</code>. Here’s the main part:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">imageListW</span>
+<span style="">&gt;</span>     <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">t</span> <span style="">m</span><span style="">.</span> <span style="">MonadWidget</span> <span style="">t</span> <span style="">m</span>
+<span style="">&gt;</span>     <span style="color: red;">=&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="">T</span><span style="">.</span><span style="">Text</span>
+<span style="">&gt;</span>     <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">imageListW</span> <span style="">dynDrop</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">let</span> <span style="">eventDrop</span> <span style="color: red;">=</span> <span style="">fmap</span> <span style="">const</span> <span style="">$</span> <span style="">updated</span> <span style="">$</span> <span style="">fmap</span> <span style="">parseDrop</span> <span style="">dynDrop</span> <span style="color: red;">::</span> <span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">MM</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">MM</span> <span style="">Image</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">rec</span> <span style="">xs</span> <span style="color: red;">&lt;-</span> <span style="">foldDyn</span> <span style="color: red;">(</span><span style="">$</span><span style="color: red;">)</span> <span style="">emptyMap</span> <span style="">$</span> <span style="">mergeWith</span> <span style="color: red;">(</span><span style="">.</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">[</span> <span style="">eventDrop</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">toggles</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">ups</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">downs</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">keys</span>
+<span style="">&gt;</span>             <span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>         <span style="">bs</span> <span style="color: red;">&lt;-</span> <span style="">imageW</span> <span style="">xs</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>         <span style="color: blue; font-weight: bold;">let</span> <span style="">toggles</span> <span style="color: red;">::</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">ups</span>     <span style="color: red;">::</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">downs</span>   <span style="color: red;">::</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">keys</span>    <span style="color: red;">::</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>             <span style="">toggles</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">mergeWith</span> <span style="color: red;">(</span><span style="">.</span><span style="color: red;">)</span> <span style="">.</span> <span style="">map</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">toggleVisibility</span><span style="color: red;">)</span> <span style="">.</span> <span style="">map</span> <span style="">evToggle</span> <span style="">.</span> <span style="">M</span><span style="">.</span><span style="">elems</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">bs</span>
+<span style="">&gt;</span>             <span style="">ups</span>     <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">mergeWith</span> <span style="color: red;">(</span><span style="">.</span><span style="color: red;">)</span> <span style="">.</span> <span style="">map</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">moveUp</span><span style="color: red;">)</span>           <span style="">.</span> <span style="">map</span> <span style="">evUp</span>     <span style="">.</span> <span style="">M</span><span style="">.</span><span style="">elems</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">bs</span>
+<span style="">&gt;</span>             <span style="">downs</span>   <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">mergeWith</span> <span style="color: red;">(</span><span style="">.</span><span style="color: red;">)</span> <span style="">.</span> <span style="">map</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">moveDown</span><span style="color: red;">)</span>         <span style="">.</span> <span style="">map</span> <span style="">evDown</span>   <span style="">.</span> <span style="">M</span><span style="">.</span><span style="">elems</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">bs</span>
+<span style="">&gt;</span>             <span style="">keys</span>    <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">mergeWith</span> <span style="color: red;">(</span><span style="">.</span><span style="color: red;">)</span> <span style="">.</span> <span style="">map</span> <span style="color: red;">(</span><span style="">fmap</span> <span style="">$</span> <span style="">setDesc</span><span style="color: red;">)</span>          <span style="">.</span> <span style="">map</span> <span style="">evKey</span>    <span style="">.</span> <span style="">M</span><span style="">.</span><span style="">elems</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">bs</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">ta</span> <span style="color: red;">&lt;-</span> <span style="">textArea</span> <span style="">$</span> <span style="color: red;">(</span><span style="">def</span> <span style="color: red;">::</span> <span style="">TextAreaConfig</span> <span style="">t</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                         <span style="color: red;">{</span> <span class="hs-sel">_textAreaConfig_setValue</span>   <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">T</span><span style="">.</span><span style="">concat</span> <span style="">.</span> <span style="">map</span> <span style="">rawHTML</span> <span style="">.</span> <span style="">M</span><span style="">.</span><span style="">elems</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">updated</span> <span style="">xs</span>
+<span style="">&gt;</span>                         <span style="color: red;">,</span> <span class="hs-sel">_textAreaConfig_attributes</span> <span style="color: red;">=</span> <span style="">taAttrs</span>
+<span style="">&gt;</span>                         <span style="color: red;">}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">return</span> <span style="">()</span>
+</code></pre>
+<p>
+Notice that <code>toggles</code> is used before it is defined! This is made possible by using the <a href="https://wiki.haskell.org/MonadFix">recursive do</a> extension which provides the ability to do <i>value</i> recursion.
+</p>
+<p>
+The key bit is the use of <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#v:mergeWith">mergeWith</a> that combines all of the events.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">mergeWith</span> <span style="color: red;">::</span> <span style="">Reflex</span> <span style="">t</span> <span style="color: red;">=&gt;</span> <span style="color: red;">(</span><span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">Event</span> <span style="">t</span> <span style="">a</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Event</span> <span style="">t</span> <span style="">a</span>
+</code></pre>
+<p>
+Here, <code>mergeWidth (.)</code> will left-fold simultaneous events.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span>     <span style="">rec</span> <span style="">xs</span> <span style="color: red;">&lt;-</span> <span style="">foldDyn</span> <span style="color: red;">(</span><span style="">$</span><span style="color: red;">)</span> <span style="">emptyMap</span> <span style="">$</span> <span style="">mergeWith</span> <span style="color: red;">(</span><span style="">.</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: red;">[</span> <span style="">eventDrop</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">toggles</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">ups</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">downs</span>
+<span style="">&gt;</span>             <span style="color: red;">,</span> <span style="">switch</span> <span style="">.</span> <span style="">current</span> <span style="">$</span> <span style="">keys</span>
+<span style="">&gt;</span>             <span style="color: red;">]</span>
+</code></pre>
+<p>
+The <code>toggles</code> has type
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">Dynamic</span> <span style="">t</span> <span style="color: red;">(</span><span style="">Event</span> <span style="">t</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span> <span style="color: red;">-&gt;</span> <span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">Int</span> <span style="">Image</span><span style="color: red;">)</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+so we use <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#v:switch">switch</a> and <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Dynamic.html#v:current">current</a> to get to an <code>Event</code> type:
+</p>
+<pre>
+ghci> :t switch
+switch :: Reflex t => Behavior t (Event t a) -> Event t a
+
+ghci> :t current
+current :: Reflex t => Dynamic t a -> Behavior t a
+
+ghci> :t switch . current
+switch . current :: Reflex t => Dynamic t (Event t a) -> Event t a
+</pre>
+<p>
+This merge is also where we bring in the drag ‘n’ drop event via <code>eventDrop</code> which is how we get a list of images into the dynamic map.
+</p>
+<p>
+<b>Try it out</b>
+</p>
+<p>
+To try it out without setting up Reflex, grab <a href="https://github.com/carlohamalainen/playground/raw/master/haskell/reflex/gallery_editor.zip">gallery_editor.zip</a>, unzip it, and open <code>gallery_editor/gallery.jsexe/index.html</code> in your browser. Drag some images onto the top area of the page using your file manager. Tested on Ubuntu 16.
+</p>
+<p>
+Or, grab the source from <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/reflex">Github</a>.
+</p>
+<p>
+<img src="https://raw.githubusercontent.com/carlohamalainen/playground/master/haskell/reflex/dropped01.png" width=600>
+</p>
+<p>
+<img src="https://raw.githubusercontent.com/carlohamalainen/playground/master/haskell/reflex/dropped02.png" width=600>
+</p>
+<div id="refs" class="references">
+
+</div>

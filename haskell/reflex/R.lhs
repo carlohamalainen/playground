@@ -56,8 +56,8 @@ a flag to indicate if the image should appear in the final output: </p>
 <p> It's not efficient to completely rebuild the map by converting
 it to a list and back again, but this'll do for now. </p>
 
-<p> In terms of the user interface there are a few events corresponding
-to these helper functions: </p>
+<p> In terms of the user interface there are a few events to
+consider: </p>
 
 <p> <ul>
 <li> user toggles visibility of the <code>k</code>th image; </li>
@@ -66,8 +66,11 @@ to these helper functions: </p>
 <li> user changes the comment text for the <code>k</code>th image. </li>
 </ul> </p>
 
-<p> Not surprisingly, the event type in Reflex is <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#t:Event">Event</a>.
-Let's put all of these events into a single type: </p>
+<p> We'll put these four events into our own type. The first three are of
+type <code>Event t Int</code> where the <code>Int</code> is the key for the
+image in question. The last one has type <code>Event t (Int, T.Text)</code>
+since we need the key and the text that was entered into the textbox.
+In Reflex, the event type is <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#t:Event">Event</a>. </p>
 
 < data ImageEvent t = ImageEvent
 <     { evToggle  :: Event t Int
@@ -75,9 +78,6 @@ Let's put all of these events into a single type: </p>
 <     , evDown    :: Event t Int
 <     , evKey     :: Event t (Int, T.Text)
 <     }
-
-<p> (Ignore the type parameter <code>t</code> for the moment). The toggle, up, and down events provide the <code>Image</code> key, while
-the key press event provides the key to the <code>Image</code> as well as the new text. </p>
 
 <p> Next, <code>imageW</code> creates an unnumbered list of images, consisting of
 a text field indicating if the image will be visible; a text box for writing a comment;
@@ -87,13 +87,6 @@ buttons to toggle visibility and move the image up and down; and finally the ima
 <     :: forall m t. (MonadWidget t m)
 <     => Dynamic t (Map Int Image)
 <     -> m (Dynamic t (Map Int (ImageEvent t)))
-
-<p> Again, ignore the <code>t</code> parameter; the type says that we have a dynamic <code>Map Int Image</code>
-which is converted into a monadic action with a dynamic map of type <code>Map Int (ImageEvent t)</code>.
-So the dynamic image map turns into a dynamic event map. </p>
-
-<p> The body of the function: </p>
-
 < imageW xs = elClass "ul" "list" $ listWithKey xs $ \k x -> elClass "li" "element" $ do
 <     dynText $ fmap (T.pack . show . imageVisible) x
 <     el "br" $ return ()
@@ -145,7 +138,11 @@ we use <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-D
 <   -> (Int -> Dynamic t Image -> m (ImageEvent t))
 <   -> m (Dynamic t (Map Int (ImageEvent t)))
 
-<p> We use the monadic function <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Dom-Widget-Basic.html#v:elClass">elClass</a> to
+<p> It's like mapping over the elements of the dynamic input: </p>
+
+< listWithKey xs $ \k x -> ...
+
+<p> We use <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Dom-Widget-Basic.html#v:elClass">elClass</a> to
 produce the elements on the page. For example the text attribute showing if the image is visible or not can be rendered
 using <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Dom-Widget-Basic.html#v:dynText">dynText</a>: </p>
 
@@ -153,8 +150,6 @@ using <a href="https://hackage.haskell.org/package/reflex-dom-0.3/docs/Reflex-Do
 
 <p> We have an <code>fmap</code> since <code>x :: Dynamic t Image</code> and <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Dynamic.html#t:Dynamic">Dynamic</a>
 has a <code>Functor</code> instance. </p>
-
-
 
 <p> The image list and all the events are wrapped up in <code>imageListW</code>. Here's the main part: </p>
 
@@ -175,7 +170,12 @@ has a <code>Functor</code> instance. </p>
 <
 <         bs <- imageW xs
 <
-<         let toggles = (mergeWith (.) . map (fmap $ toggleVisibility) . map evToggle . M.elems) <$> bs
+<         let toggles :: Dynamic t (Event t (M.Map Int Image -> M.Map Int Image))
+<             ups     :: Dynamic t (Event t (M.Map Int Image -> M.Map Int Image))
+<             downs   :: Dynamic t (Event t (M.Map Int Image -> M.Map Int Image))
+<             keys    :: Dynamic t (Event t (M.Map Int Image -> M.Map Int Image))
+<
+<             toggles = (mergeWith (.) . map (fmap $ toggleVisibility) . map evToggle . M.elems) <$> bs
 <             ups     = (mergeWith (.) . map (fmap $ moveUp)           . map evUp     . M.elems) <$> bs
 <             downs   = (mergeWith (.) . map (fmap $ moveDown)         . map evDown   . M.elems) <$> bs
 <             keys    = (mergeWith (.) . map (fmap $ setDesc)          . map evKey    . M.elems) <$> bs
@@ -190,3 +190,52 @@ has a <code>Functor</code> instance. </p>
 <p> Notice that <code>toggles</code> is used before it is defined! This is made possible by
 using the <a href="https://wiki.haskell.org/MonadFix">recursive do</a> extension which provides
 the ability to do <i>value</i> recursion. </p>
+
+<p> The key bit is the use
+of <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#v:mergeWith">mergeWith</a>
+that combines all of the events. </p>
+
+< mergeWith :: Reflex t => (a -> a -> a) -> [Event t a] -> Event t a
+
+<p> Here, <code>mergeWidth (.)</code> will left-fold simultaneous events. </p>
+
+<     rec xs <- foldDyn ($) emptyMap $ mergeWith (.)
+<             [ eventDrop
+<             , switch . current $ toggles
+<             , switch . current $ ups
+<             , switch . current $ downs
+<             , switch . current $ keys
+<             ]
+
+<p> The <code>toggles</code> has type </p>
+
+< Dynamic t (Event t (M.Map Int Image -> M.Map Int Image))
+
+<p> so we use <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Class.html#v:switch">switch</a>
+and <a href="https://hackage.haskell.org/package/reflex-0.4.0/docs/Reflex-Dynamic.html#v:current">current</a>
+to get to an <code>Event</code> type: </p>
+
+<pre>
+ghci> :t switch
+switch :: Reflex t => Behavior t (Event t a) -> Event t a
+
+ghci> :t current
+current :: Reflex t => Dynamic t a -> Behavior t a
+
+ghci> :t switch . current
+switch . current :: Reflex t => Dynamic t (Event t a) -> Event t a
+</pre>
+
+<p> This merge is also where we bring in the drag 'n' drop event via <code>eventDrop</code> which is how we get
+a list of images into the dynamic map. </p>
+
+<p><b>Try it out</b></p>
+
+<p> To try it out without setting up Reflex, grab <a href="https://github.com/carlohamalainen/playground/raw/master/haskell/reflex/gallery_editor.zip">gallery_editor.zip</a>, unzip it, and open <code>gallery_editor/gallery.jsexe/index.html</code> in your browser. Drag some images onto the top area of the page using your file manager. Tested on Ubuntu 16. </p>
+
+<p> Or, grab the source from <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/reflex">Github</a>. </p>
+
+<p><img src="https://raw.githubusercontent.com/carlohamalainen/playground/master/haskell/reflex/dropped01.png" width=600> </p>
+<p><img src="https://raw.githubusercontent.com/carlohamalainen/playground/master/haskell/reflex/dropped02.png" width=600> </p>
+
+
