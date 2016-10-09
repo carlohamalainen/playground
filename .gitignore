@@ -25,3 +25,13 @@ haskell/mvar/.stack-work/*
 haskell/profunctors/.stack-work/*
 haskell/prob-monad/cabal.sandbox.config
 haskell/prob-monad/dist/*
+
+haskell/zipper/Main
+haskell/zipper/Main.dyn_hi
+haskell/zipper/Main.dyn_o
+haskell/zipper/Zipper.dyn_hi
+haskell/zipper/Zipper.dyn_o
+
+haskell/bigdata/.cabal-sandbox/*
+haskell/bigdata/cabal.sandbox.config
+haskell/bigdata/dist/

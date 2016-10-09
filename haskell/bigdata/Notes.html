@@ -1,0 +1,125 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Notes</span> <span style="color: blue; font-weight: bold;">where</span>
+</code></pre>
+<p>
+I was reading <a href="https://external-apps.qut.edu.au/futurelearn/resources/mm3/graph/graph-simple.html.utf8">some notes from QUT</a> about using spectral graph theory to partition a graph using eigenvalues of unnormalised Laplacian. Their Matlab code looks like this:
+</p>
+<pre>
+% Form W = Gaussian distribution based on distances
+W = zeros(100, 100);
+D = zeros(100, 100);
+
+sigma = 2;
+N = 100;
+for i = 1:N
+    for j = 1:N
+        if (j ~= i)
+            % Calculate the distance between two points
+            dist = norm([A(i, 1) - A(j, 1); A(i, 2) - A(j, 2)]);
+            expp = exp(-dist^2 / (2 * sigma^2));
+            adjacency(i, j) = 1; 
+            % Add the weights to the matrix
+            W(i, j) = expp; 
+            % Add up the row sum as we go
+            D(i, i) = D(i, i) + expp;
+        end
+    end
+end
+
+L = D - W;
+
+Find the eigenpairs of L
+
+[vec, val] = eig(L, 'vector');
+% Ensure the eigenvalues and eigenvectors are sorted in ascending order
+[val,ind] = sort(val);
+vec = vec(:, ind);
+
+% Plot with clusters identified by marker
+% v2
+figure; 
+hold on;
+for i = 1:N
+    plot(i, vec(i, 2), ['k' plot_syms{i}]);
+end
+</pre>
+<p>
+Personally, this gives me nightmares from undergrad numerical methods classes. So here’s how to do it in Haskell.
+</p>
+<p>
+To create the <code>W</code> matrix we use <code>buildMatrix</code>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">buildW</span> <span style="color: red;">::</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Matrix</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Matrix</span> <span style="">Double</span>
+<span style="">&gt;</span> <span style="">buildW</span> <span style="">sigma</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">buildMatrix</span> <span style="">n</span> <span style="">n</span> <span style="">$</span> <span style="color: red;">\</span><span style="color: red;">(</span><span style="">i</span><span style="color: red;">,</span><span style="">j</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">sigma</span> <span style="">a</span> <span style="">i</span> <span style="">j</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">n</span> <span style="color: red;">=</span> <span style="">rows</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">f</span> <span style="">sigma</span> <span style="">a</span> <span style="">i</span> <span style="">j</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">if</span> <span style="">j</span> <span style="">/=</span> <span style="">i</span>
+<span style="">&gt;</span>                         <span style="color: blue; font-weight: bold;">then</span> <span style="">expp</span> <span style="">sigma</span> <span style="">a</span> <span style="">i</span> <span style="">j</span>
+<span style="">&gt;</span>                         <span style="color: blue; font-weight: bold;">else</span> <span class="hs-num">0.0</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">dist</span> <span style="color: red;">::</span> <span style="">Matrix</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Double</span>
+<span style="">&gt;</span>     <span style="">dist</span> <span style="">m</span> <span style="">i</span> <span style="">j</span> <span style="color: red;">=</span> <span style="">norm2</span> <span style="">$</span> <span style="">fromList</span> <span style="color: red;">[</span> <span style="">m</span><span style="">!</span><span style="">i</span><span style="">!</span><span class="hs-num">0</span> <span style="color: green;">-</span> <span style="">m</span><span style="">!</span><span style="">j</span><span style="">!</span><span class="hs-num">0</span><span style="color: red;">,</span> <span style="">m</span><span style="">!</span><span style="">i</span><span style="">!</span><span class="hs-num">1</span> <span style="color: green;">-</span> <span style="">m</span><span style="">!</span><span style="">j</span><span style="">!</span><span class="hs-num">1</span> <span style="color: red;">]</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">expp</span> <span style="color: red;">::</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Matrix</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Double</span>
+<span style="">&gt;</span>     <span style="">expp</span> <span style="">sigma</span> <span style="">m</span> <span style="">i</span> <span style="">j</span> <span style="color: red;">=</span> <span style="">exp</span> <span style="">$</span> <span style="color: red;">(</span><span style="color: green;">-</span><span style="color: red;">(</span><span style="">dist</span> <span style="">m</span> <span style="">i</span> <span style="">j</span><span style="color: red;">)</span><span style="">**</span><span class="hs-num">2</span><span style="color: red;">)</span><span style="">/</span><span style="color: red;">(</span><span class="hs-num">2</span><span style="">*</span><span style="">sigma</span><span style="">**</span><span class="hs-num">2</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+The <code>D</code> matrix is a diagonal matrix with each element being the sum of a row of <code>W</code>, which is nicely expressible by composing a few functions:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">buildD</span> <span style="color: red;">::</span> <span style="">Matrix</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Matrix</span> <span style="">Double</span>
+<span style="">&gt;</span> <span style="">buildD</span> <span style="">w</span> <span style="color: red;">=</span> <span style="">diag</span>
+<span style="">&gt;</span>          <span style="">.</span> <span style="">fromList</span>
+<span style="">&gt;</span>          <span style="">.</span> <span style="">map</span> <span style="color: red;">(</span><span style="">foldVector</span> <span style="color: red;">(</span><span style="">+</span><span style="color: red;">)</span> <span class="hs-num">0</span><span style="color: red;">)</span>
+<span style="">&gt;</span>          <span style="">.</span> <span style="">toRows</span>
+<span style="">&gt;</span>          <span style="">$</span> <span style="">w</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">n</span> <span style="color: red;">=</span> <span style="">rows</span> <span style="">w</span>
+</code></pre>
+<p>
+The <code>L</code> matrix is real and symmetric so we use <a href="https://hackage.haskell.org/package/hmatrix-0.16.1.5/docs/Numeric-LinearAlgebra-HMatrix.html#v:eigSH">eigSH</a> which provides the eigenvalues in descending order.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">lapEigs</span> <span style="color: red;">::</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Matrix</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">Vector</span> <span style="">Double</span><span style="color: red;">,</span> <span style="">Matrix</span> <span style="">Double</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">lapEigs</span> <span style="">sigma</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">eigSH</span> <span style="">l</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">w</span> <span style="color: red;">=</span> <span style="">buildW</span> <span style="">sigma</span> <span style="">m</span>
+<span style="">&gt;</span>     <span style="">d</span> <span style="color: red;">=</span> <span style="">buildD</span> <span style="">w</span>
+<span style="">&gt;</span>     <span style="">l</span> <span style="color: red;">=</span> <span style="">d</span> <span style="color: green;">-</span> <span style="">w</span>
+</code></pre>
+<p>
+To finish up, the Fiedler eigenvector corresponds to the second smallest eigenvalue:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">fiedler</span> <span style="color: red;">::</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="">Matrix</span> <span style="">Double</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">Double</span><span style="color: red;">,</span> <span style="">Vector</span> <span style="">Double</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">fiedler</span> <span style="">sigma</span> <span style="">m</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">val</span> <span style="">!</span> <span style="color: red;">(</span><span style="">n</span><span style="color: green;">-</span><span class="hs-num">2</span><span style="color: red;">)</span><span style="color: red;">,</span> <span style="">vector</span> <span style="">$</span> <span style="">concat</span> <span style="">$</span> <span style="">toLists</span> <span style="">$</span> <span style="">vec</span> <span class="hs-sel">¿</span> <span style="color: red;">[</span><span style="">n</span><span style="color: green;">-</span><span class="hs-num">2</span><span style="color: red;">]</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="color: red;">(</span><span style="">val</span><span style="color: red;">,</span> <span style="">vec</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">lapEigs</span> <span style="">sigma</span> <span style="">m</span>
+<span style="">&gt;</span>     <span style="">n</span> <span style="color: red;">=</span> <span style="">rows</span> <span style="">m</span>
+</code></pre>
+<p>
+To plot the eigenvalues and eigenvector we use the <a href="https://hackage.haskell.org/package/Chart-1.8/docs/Graphics-Rendering-Chart-Easy.html">Chart</a> library which uses the <a href="https://en.wikipedia.org/wiki/Cairo_(graphics)">cairo</a> backend.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">doPlot</span> <span style="color: teal;">"eigenvalues.png"</span> <span style="color: teal;">"Eigenvalues"</span> <span style="color: teal;">"eigenvalue"</span> <span style="">$</span> <span style="">zip</span> <span style="color: red;">[</span><span class="hs-num">0</span><span style="color: red;">..</span><span style="color: red;">]</span> <span style="color: red;">(</span><span style="">reverse</span> <span style="">$</span> <span style="">toList</span> <span style="">val</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">doPlot</span> <span style="color: teal;">"fiedler.png"</span>
+<span style="">&gt;</span>        <span style="color: teal;">"Second eigenvalue of unnormalised Laplacian"</span>
+<span style="">&gt;</span>        <span style="color: teal;">"fiedler eigenvector"</span>
+<span style="">&gt;</span>        <span style="color: red;">(</span><span style="">zip</span> <span style="color: red;">[</span><span class="hs-num">0</span><span style="color: red;">..</span><span style="color: red;">]</span> <span style="">$</span> <span style="">toList</span> <span style="">algConnecEigVec</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+<center>
+<img src="eigenvalues.png" width=600>
+</center>
+</p>
+<p>
+<center>
+<img src="fiedler.png" width=600>
+</center>
+</p>
+<div id="refs" class="references">
+
+</div>
