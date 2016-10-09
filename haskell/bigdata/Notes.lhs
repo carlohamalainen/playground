@@ -1,5 +1,3 @@
-> module Notes where
-
 <p> I was reading <a href="https://external-apps.qut.edu.au/futurelearn/resources/mm3/graph/graph-simple.html.utf8">some notes from QUT</a> about using spectral graph theory to partition a graph
 using eigenvalues of unnormalised Laplacian. Their Matlab code looks like this: </p>
 
@@ -44,7 +42,10 @@ end
 </pre>
 
 <p> Personally, this gives me nightmares from undergrad numerical methods classes. So here's how to do
-it in Haskell. </p>
+it in Haskell. Full source (including cabal config) for this post
+is <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/bigdata">here</a>. </p>
+
+> module Notes where
 
 <p> To create the <code>W</code> matrix we use <code>buildMatrix</code>: </p>
 
@@ -105,9 +106,9 @@ the <a href="https://hackage.haskell.org/package/Chart-1.8/docs/Graphics-Renderi
 <        "fiedler eigenvector"
 <        (zip [0..] $ toList algConnecEigVec)
 
-<p><center><img src="eigenvalues.png" width=600></center></p>
+<p><center><img src="https://raw.githubusercontent.com/carlohamalainen/playground/master/haskell/bigdata/eigenvalues.png" width=600></center></p>
 
-<p><center><img src="fiedler.png" width=600></center></p>
+<p><center><img src="https://raw.githubusercontent.com/carlohamalainen/playground/master/haskell/bigdata/fiedler.png" width=600></center></p>
 
 
 
