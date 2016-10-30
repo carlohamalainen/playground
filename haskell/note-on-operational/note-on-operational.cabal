@@ -1,0 +1,15 @@
+name:                note-on-operational
+version:             0.1.0.0
+license-file:        LICENSE
+author:              Carlo Hamalainen
+maintainer:          carlo@carlo-hamalainen.net
+build-type:          Simple
+cabal-version:       >=1.10
+
+library
+  exposed-modules:    Note
+  build-depends: base
+               , containers
+               , operational
+               , QuickCheck
+  default-language:    Haskell2010

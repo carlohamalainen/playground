@@ -1,0 +1,477 @@
+<meta charset="utf-8">
+
+<head>
+<link rel="stylesheet" type="text/css" href="bootstrap.css">
+</head>
+
+<p>
+I was looking at an old post of mine on <a href="https://carlo-hamalainen.net/blog/2014/6/7/notes-on-free-monads">free monads</a> and wondered what it would look like using <a href="https://hackage.haskell.org/package/operational">operational</a>. Here we go!
+</p>
+<p>
+First, some imports. We use <a href="https://wiki.haskell.org/GADTs_for_dummies">GADTs</a> for our instruction type.
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">{-# LANGUAGE GADTs #-}</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">module</span> <span style="">Note</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Control</span><span style="">.</span><span style="">Monad</span><span style="">.</span><span style="">Operational</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="">Test</span><span style="">.</span><span style="">QuickCheck</span>
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">import</span> <span style="color: blue; font-weight: bold;">qualified</span> <span style="">Data</span><span style="">.</span><span style="">Map</span> <span style="color: blue; font-weight: bold;">as</span> <span style="">M</span>
+</code></pre>
+<p>
+We want to encode a few instructions that operate on a data store. For the moment we don’t care about the implementation, just the underlying actions that we can perform: create a value, list all values, retrieve a particular value, and delete a value.
+</p>
+<p>
+Suppose we have an index of type <code>i</code> and values of type <code>v</code>. Then <code>DataStoreInstruction</code> is:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">DataStoreInstruction</span> <span style="">i</span> <span style="">v</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">Create</span>   <span style="color: red;">::</span> <span style="">v</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreInstruction</span> <span style="">i</span> <span style="">v</span> <span style="">i</span>
+<span style="">&gt;</span>     <span style="">List</span>     <span style="color: red;">::</span>      <span style="">DataStoreInstruction</span> <span style="">i</span> <span style="">v</span> <span style="color: red;">[</span><span style="">v</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">Retrieve</span> <span style="color: red;">::</span> <span style="">i</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreInstruction</span> <span style="">i</span> <span style="">v</span> <span style="color: red;">(</span><span style="">Maybe</span> <span style="">v</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">Delete</span>   <span style="color: red;">::</span> <span style="">i</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreInstruction</span> <span style="">i</span> <span style="">v</span> <span style="">()</span>
+</code></pre>
+<p>
+Intuitively, <code>Create</code> takes a value of type <code>v</code> and returns an instruction, which on interpretation gives a value of type <code>i</code> (the last type parameter).
+</p>
+<p>
+<code>List</code> doesn’t take any argument and produces a list of type <code>v</code>, i.e. <code>[v]</code>. The only odd one is <code>Delete</code> which doesn’t return anything, so it has a <code>()</code> in the last type variable.
+</p>
+<p>
+A sequence of <code>DataStoreInstruction</code>s is a program, which we get using the <a href="https://hackage.haskell.org/package/operational-0.2.3.4/docs/Control-Monad-Operational.html#t:Program">Program</a> constructor:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">DataStoreProgram</span> <span style="">i</span> <span style="">v</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Program</span> <span style="color: red;">(</span><span style="">DataStoreInstruction</span> <span style="">i</span> <span style="">v</span><span style="color: red;">)</span> <span style="">a</span>
+</code></pre>
+<p>
+where the index has type <code>i</code>, the values have type <code>v</code>, and the overall result of the program has type <code>a</code>.
+<p>
+<p>
+To more easily construct programs, use <a href="https://hackage.haskell.org/package/operational-0.2.3.4/docs/Control-Monad-Operational.html#v:singleton">singleton</a>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">create</span> <span style="color: red;">::</span> <span style="">v</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreProgram</span> <span style="">i</span> <span style="">v</span> <span style="">i</span>
+<span style="">&gt;</span> <span style="">create</span> <span style="color: red;">=</span> <span style="">singleton</span> <span style="">.</span> <span style="">Create</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">list</span> <span style="color: red;">::</span> <span style="">DataStoreProgram</span> <span style="">i</span> <span style="">v</span> <span style="color: red;">[</span><span style="">v</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">list</span> <span style="color: red;">=</span> <span style="">singleton</span> <span style="">List</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">retrieve</span> <span style="color: red;">::</span> <span style="">i</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreProgram</span> <span style="">i</span> <span style="">v</span> <span style="color: red;">(</span><span style="">Maybe</span> <span style="">v</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">retrieve</span> <span style="color: red;">=</span> <span style="">singleton</span> <span style="">.</span> <span style="">Retrieve</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">delete</span> <span style="color: red;">::</span> <span style="">i</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreProgram</span> <span style="">i</span> <span style="">v</span> <span style="">()</span>
+<span style="">&gt;</span> <span style="">delete</span> <span style="color: red;">=</span> <span style="">singleton</span> <span style="">.</span> <span style="">Delete</span>
+</code></pre>
+<p>
+Now we can write programs in this DSL! All the usual monad things are at our disposal:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Insert a few values and return a list</span>
+<span style="">&gt;</span> <span style="color: green;">-- of all values:</span>
+<span style="">&gt;</span> <span style="">doSomeThings</span> <span style="color: red;">::</span> <span style="">DataStoreProgram</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span> <span style="">doSomeThings</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">ix3</span> <span style="color: red;">&lt;-</span> <span style="">create</span> <span class="hs-num">3</span>
+<span style="">&gt;</span>     <span style="">ix4</span> <span style="color: red;">&lt;-</span> <span style="">create</span> <span class="hs-num">4</span>
+<span style="">&gt;</span>     <span style="">delete</span> <span style="">ix3</span>
+<span style="">&gt;</span>     <span style="">ix5</span> <span style="color: red;">&lt;-</span> <span style="">create</span> <span class="hs-num">5</span>
+<span style="">&gt;</span>     <span style="">list</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Insert all the supplied values and</span>
+<span style="">&gt;</span> <span style="color: green;">-- return a list of indexes as well as a</span>
+<span style="">&gt;</span> <span style="color: green;">-- list of final values (which should be empty).</span>
+<span style="">&gt;</span> <span style="">insertValues</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreProgram</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">(</span><span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span><span style="color: red;">,</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">insertValues</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">ixs</span> <span style="color: red;">&lt;-</span> <span style="">forM</span> <span style="">xs</span> <span style="">create</span>
+<span style="">&gt;</span>     <span style="">forM_</span> <span style="">ixs</span> <span style="">delete</span> <span style="color: green;">-- delete everything</span>
+<span style="">&gt;</span>     <span style="">final</span> <span style="color: red;">&lt;-</span> <span style="">list</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">return</span> <span style="color: red;">(</span><span style="">ixs</span><span style="color: red;">,</span> <span style="">final</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+The last step is to write an interpreter. We do this using <a href="https://hackage.haskell.org/package/operational-0.2.3.4/docs/Control-Monad-Operational.html#v:view">view</a> and pattern matching on the constructors of <code>DataStoreInstruction</code>. We use <a href="https://hackage.haskell.org/package/operational-0.2.3.4/docs/Control-Monad-Operational.html#v::-62--62--61-">:&gt;&gt;=</a> to break apart the program. As the documentation says, <code>(someInstruction :&gt;&gt;= k)</code> means <code>someInstruction</code> and the remaining program is given by the function <code>k</code>.
+</p>
+<p>
+Here we interpret the program using a <code>Map</code> as the underlying data store:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">interpretMap</span> <span style="color: red;">::</span> <span style="">Ord</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">DataStoreProgram</span> <span style="">a</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">a</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">interpretMap</span> <span style="color: red;">=</span> <span style="">eval</span> <span style="">.</span> <span style="">view</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">x</span><span style="color: red;">)</span>          <span style="">m</span> <span style="color: red;">=</span> <span style="">x</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Create</span>   <span style="">v</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">interpretMap</span> <span style="color: red;">(</span><span style="">k</span> <span style="">v</span><span style="color: red;">)</span>              <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">insert</span> <span style="">v</span> <span style="">v</span> <span style="">m</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">List</span>       <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">interpretMap</span> <span style="color: red;">(</span><span style="">k</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">elems</span> <span style="">m</span><span style="color: red;">)</span><span style="color: red;">)</span>    <span style="">m</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Retrieve</span> <span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">interpretMap</span> <span style="color: red;">(</span><span style="">k</span> <span style="">$</span> <span style="">M</span><span style="">.</span><span style="">lookup</span> <span style="">i</span> <span style="">m</span><span style="color: red;">)</span> <span style="">m</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Delete</span>   <span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">interpretMap</span> <span style="color: red;">(</span><span style="">k</span> <span style="">()</span><span style="color: red;">)</span>             <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">delete</span> <span style="">i</span> <span style="">m</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+If we wanted to we could flatten a program out to a string:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">interpretString</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Show</span> <span style="">a</span><span style="color: red;">,</span> <span style="">Show</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">DataStoreProgram</span> <span style="">a</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="">String</span>
+<span style="">&gt;</span> <span style="">interpretString</span> <span style="color: red;">=</span> <span style="">eval</span> <span style="">.</span> <span style="">view</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">x</span><span style="color: red;">)</span>          <span style="color: red;">=</span> <span style="color: teal;">"Return "</span>   <span style="">++</span> <span style="">show</span> <span style="">x</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Create</span>   <span style="">v</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: teal;">"Create("</span>   <span style="">++</span> <span style="">show</span> <span style="">v</span> <span style="">++</span> <span style="color: teal;">"); "</span>  <span style="">++</span> <span style="">interpretString</span> <span style="color: red;">(</span><span style="">k</span> <span style="">v</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">List</span>       <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: teal;">"List; "</span>                        <span style="">++</span> <span style="">interpretString</span> <span style="color: red;">(</span><span style="">k</span> <span style="">[]</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Retrieve</span> <span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: teal;">"Retrieve("</span> <span style="">++</span> <span style="">show</span> <span style="">i</span> <span style="">++</span> <span style="color: teal;">"); "</span>  <span style="">++</span> <span style="">interpretString</span> <span style="color: red;">(</span><span style="">k</span> <span style="">$</span> <span style="">Just</span> <span style="">i</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Delete</span>   <span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: teal;">"Delete("</span>   <span style="">++</span> <span style="">show</span> <span style="">i</span> <span style="">++</span> <span style="color: teal;">"); "</span>  <span style="">++</span> <span style="">interpretString</span> <span style="color: red;">(</span><span style="">k</span> <span style="">()</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Maybe we have some super-important business need for storing Int/Int key value maps with a Postgresql backend. We could target this by writing an interpreter that uses <a href="https://hackage.haskell.org/package/postgresql-simple-0.5.2.1/docs/Database-PostgreSQL-Simple.html">postgresql-simple</a>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Connection</span> <span style="color: red;">=</span> <span style="">Connection</span> <span style="color: green;">-- cheating for this example</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="">interprestPostgresql</span> <span style="color: red;">::</span> <span style="">DataStoreProgram</span> <span style="">Int</span> <span style="">Int</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">Connection</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">interprestPostgresql</span> <span style="color: red;">=</span> <span style="">eval</span> <span style="">.</span> <span style="">view</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">x</span><span style="color: red;">)</span>          <span style="color: blue; font-weight: bold;">_</span> <span style="color: red;">=</span> <span style="">return</span> <span style="">x</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Create</span>   <span style="">v</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">c</span> <span style="color: red;">=</span> <span style="">interprestPostgresql</span> <span style="color: red;">(</span><span style="">k</span> <span style="">v</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">insertPsql</span> <span style="">c</span> <span style="">v</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">List</span>       <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">c</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">allValues</span> <span style="color: red;">&lt;-</span> <span style="">getAllPsql</span> <span style="">c</span>
+<span style="">&gt;</span>                                     <span style="">interprestPostgresql</span> <span style="color: red;">(</span><span style="">k</span> <span style="">allValues</span><span style="color: red;">)</span> <span style="">c</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Retrieve</span> <span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">c</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">v</span> <span style="color: red;">&lt;-</span> <span style="">lookupPsql</span> <span style="">c</span> <span style="">i</span>
+<span style="">&gt;</span>                                     <span style="">interprestPostgresql</span> <span style="color: red;">(</span><span style="">k</span> <span style="">v</span><span style="color: red;">)</span> <span style="">c</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">(</span><span style="">Delete</span>   <span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="">c</span> <span style="color: red;">=</span> <span style="">deletePsql</span> <span style="">c</span> <span style="">i</span> <span style="">&gt;&gt;</span> <span style="">interprestPostgresql</span> <span style="color: red;">(</span><span style="">k</span> <span style="">()</span><span style="color: red;">)</span> <span style="">c</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: green;">-- Exercises for the reader.</span>
+<span style="">&gt;</span>     <span style="">insertPsql</span> <span style="">c</span> <span style="">v</span> <span style="color: red;">=</span> <span style="">undefined</span>
+<span style="">&gt;</span>     <span style="">getAllPsql</span> <span style="">c</span>   <span style="color: red;">=</span> <span style="">undefined</span>
+<span style="">&gt;</span>     <span style="">lookupPsql</span> <span style="">c</span> <span style="">i</span> <span style="color: red;">=</span> <span style="">undefined</span>
+<span style="">&gt;</span>     <span style="">deletePsql</span> <span style="">c</span> <span style="">i</span> <span style="color: red;">=</span> <span style="">undefined</span>
+</code></pre>
+<p>
+Running the programs:
+</p>
+<pre>
+*Note> interpretMap doSomeThings M.empty
+[4,5]
+
+*Note> interpretString doSomeThings
+"Create(3); Create(4); Delete(3); Create(5); List; Return []"
+
+*Note> interpretMap (insertValues [1..10]) M.empty
+([1,2,3,4,5,6,7,8,9,10],[])
+
+*Note> interpretString (insertValues [1..10])
+"Create(1); Create(2); Create(3); Create(4); Create(5); Create(6);
+ Create(7); Create(8); Create(9); Create(10); Delete(1); Delete(2);
+ Delete(3); Delete(4); Delete(5); Delete(6); Delete(7); Delete(8);
+ Delete(9); Delete(10); List; Return ([1,2,3,4,5,6,7,8,9,10],[])"
+</pre>
+<h3>
+QuickCheck
+</h3>
+<p>
+It’s always good to write some tests:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_insert_then_delete</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_insert_then_delete</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="">null</span> <span style="">$</span> <span style="">interpretMap</span> <span style="color: red;">(</span><span style="">f</span> <span style="">xs</span><span style="color: red;">)</span> <span style="">M</span><span style="">.</span><span style="">empty</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreProgram</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="">is</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>         <span style="">ixs</span> <span style="color: red;">&lt;-</span> <span style="">forM</span> <span style="">is</span> <span style="">create</span>
+<span style="">&gt;</span>         <span style="">forM_</span> <span style="">ixs</span> <span style="">delete</span>
+<span style="">&gt;</span>         <span style="">list</span>
+</code></pre>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_create</span> <span style="color: red;">::</span> <span style="">Positive</span> <span style="">Int</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_create</span> <span style="color: red;">(</span><span style="">Positive</span> <span style="">n</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">let</span> <span style="">ns</span> <span style="color: red;">=</span> <span style="color: red;">[</span><span class="hs-num">1</span><span style="color: red;">..</span><span style="">n</span><span style="color: red;">]</span> <span style="color: blue; font-weight: bold;">in</span> <span style="">ns</span> <span style="">==</span> <span style="">interpretMap</span> <span style="color: red;">(</span><span style="">f</span> <span style="">ns</span><span style="color: red;">)</span> <span style="">M</span><span style="">.</span><span style="">empty</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="color: red;">=</span> <span style="">mapM</span> <span style="">create</span>
+</code></pre>
+<pre>
+*Note> quickCheck prop_insert_then_delete
++++ OK, passed 100 tests.
+
+*Note>
+*Note>
+*Note>
+*Note> quickCheck prop_create
++++ OK, passed 100 tests.
+</pre>
+<p>
+Over time we find out that the interpreter that uses <code>Map</code> is too slow, so we write a new one using a fancy data structure:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Uses fancy tuned data structure.</span>
+<span style="">&gt;</span> <span style="">interpretMapFast</span> <span style="color: red;">::</span> <span style="">Ord</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">DataStoreProgram</span> <span style="">a</span> <span style="">a</span> <span style="">b</span> <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">M</span><span style="">.</span><span style="">Map</span> <span style="">a</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">b</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">interpretMapFast</span> <span style="color: red;">=</span> <span style="">undefined</span> <span style="color: green;">-- So fancy!</span>
+</code></pre>
+<p>
+Now we can compare implementations using QuickCheck. Nice!
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">prop_fast_inserts</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span>
+<span style="">&gt;</span> <span style="">prop_fast_inserts</span> <span style="">xs</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span style="">interpretMapFast</span> <span style="">xs'</span> <span style="">M</span><span style="">.</span><span style="">empty</span><span style="color: red;">)</span> <span style="">==</span> <span style="color: red;">(</span><span style="">interpretMap</span> <span style="">xs'</span> <span style="">M</span><span style="">.</span><span style="">empty</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">xs'</span> <span style="color: red;">=</span> <span style="">f</span> <span style="">xs</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">f</span> <span style="color: red;">::</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">DataStoreProgram</span> <span style="">Int</span> <span style="">Int</span> <span style="color: red;">[</span><span style="">Int</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">f</span> <span style="">is</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>         <span style="">ixs</span> <span style="color: red;">&lt;-</span> <span style="">forM</span> <span style="">is</span> <span style="">create</span>
+<span style="">&gt;</span>         <span style="">list</span>
+</code></pre>
+<h2>
+Use of operational in larger projects
+</h2>
+<p>
+Here are a few samples of the operational package in action. For more, see the <a href="http://packdeps.haskellers.com/reverse/operational">reverse dependencies</a> on Hackage.
+</p>
+<h3>
+Hadron
+</h3>
+<p>
+<p>I first heard about operational from this talk at the New York Haskell meetup: <a href="https://vimeo.com/90189610">Conquering Hadoop with Haskell and Ozgun Ataman</a>.</p>
+<p>
+Here is the <code>ConI</code> type from <a href="https://github.com/Soostone/hadron/blob/master/src/Hadron/Controller.hs">Hadron.Controller</a>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">ConI</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">Connect</span> <span style="color: red;">::</span> <span style="color: blue; font-weight: bold;">forall</span> <span style="">i</span> <span style="">o</span><span style="">.</span> <span style="">MapReduce</span> <span style="">i</span> <span style="">o</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">Tap</span> <span style="">i</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Tap</span> <span style="">o</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="">Maybe</span> <span style="">String</span>
+<span style="">&gt;</span>             <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">MakeTap</span> <span style="color: red;">::</span> <span style="">Protocol'</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="color: red;">(</span><span style="">Tap</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">BinaryDirTap</span>
+<span style="">&gt;</span>         <span style="color: red;">::</span> <span style="">FilePath</span>
+<span style="">&gt;</span>         <span style="color: red;">-&gt;</span> <span style="color: red;">(</span><span style="">FilePath</span> <span style="color: red;">-&gt;</span> <span style="">Bool</span><span style="color: red;">)</span>
+<span style="">&gt;</span>         <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="color: red;">(</span><span style="">Tap</span> <span style="color: red;">(</span><span style="">FilePath</span><span style="color: red;">,</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">ConIO</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">OrchIO</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="">()</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Only the orchestrator performs action</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">NodeIO</span> <span style="color: red;">::</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Only the nodes perform action</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">SetVal</span> <span style="color: red;">::</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">GetVal</span> <span style="color: red;">::</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="color: red;">(</span><span style="">Maybe</span> <span style="">B</span><span style="">.</span><span style="">ByteString</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">RunOnce</span> <span style="color: red;">::</span> <span style="">Serialize</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ConI</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Only run on orchestrator, then make available to all the</span>
+<span style="">&gt;</span>     <span style="color: green;">-- nodes via HDFS.</span>
+</code></pre>
+<p>
+There is the distinction between the single orchestrator node, which runs <code>OrchIO</code> and can’t run <code>NodeIO</code>, and worker nodes that can’t run <code>OrchIO</code> but can run <code>NodeIO</code>. In the <code>orchestrate</code>, trying to evaluate a <code>NodeIO</code> results in an error:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">orchestrate</span>
+<span style="">&gt;</span>     <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">MonadMask</span> <span style="">m</span><span style="color: red;">,</span> <span style="">MonadIO</span> <span style="">m</span><span style="color: red;">,</span> <span style="">Applicative</span> <span style="">m</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="color: red;">=&gt;</span> <span style="">Controller</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="color: red;">-&gt;</span> <span style="">RunContext</span>
+<span style="">&gt;</span>     <span style="color: red;">-&gt;</span> <span style="">RerunStrategy</span>
+<span style="">&gt;</span>     <span style="color: red;">-&gt;</span> <span style="">ContState</span>
+<span style="">&gt;</span>     <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">String</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">orchestrate</span> <span style="color: red;">(</span><span style="">Controller</span> <span style="">p</span><span style="color: red;">)</span> <span style="">settings</span> <span style="">rr</span> <span style="">s</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>     <span style="">bracket</span>
+<span style="">&gt;</span>       <span style="color: red;">(</span><span style="">liftIO</span> <span style="">$</span> <span style="">openFile</span> <span style="color: teal;">"hadron.log"</span> <span style="">AppendMode</span><span style="color: red;">)</span>
+<span style="">&gt;</span>       <span style="color: red;">(</span><span style="">liftIO</span> <span style="">.</span> <span style="">hClose</span><span style="color: red;">)</span>
+<span style="">&gt;</span>       <span style="color: red;">(</span><span style="color: red;">\</span><span class="hs-sel">_h</span> <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">do</span> <span style="">echoInfo</span> <span style="">()</span>  <span style="color: teal;">"Initiating orchestration..."</span>
+<span style="">&gt;</span>                  <span style="">evalStateT</span> <span style="color: red;">(</span><span style="">runExceptT</span> <span style="color: red;">(</span><span style="">go</span> <span style="">p</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="">s</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>       <span style="">go</span> <span style="color: red;">=</span> <span style="">eval</span> <span style="">.</span> <span style="">O</span><span style="">.</span><span style="">view</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>       <span style="">eval</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">return</span> <span style="">a</span>
+<span style="">&gt;</span>       <span style="">eval</span> <span style="color: red;">(</span><span style="">i</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">eval'</span> <span style="">i</span> <span style="">&gt;&gt;=</span> <span style="">go</span> <span style="">.</span> <span style="">f</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>       <span style="">eval'</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">Functor</span> <span style="">m</span><span style="color: red;">,</span> <span style="">MonadIO</span> <span style="">m</span><span style="color: red;">)</span> <span style="color: red;">=&gt;</span> <span style="">ConI</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ExceptT</span> <span style="">String</span> <span style="color: red;">(</span><span style="">StateT</span> <span style="">ContState</span> <span style="">m</span><span style="color: red;">)</span> <span style="">a</span>
+<span style="">&gt;</span>       <span style="">eval'</span> <span style="color: red;">(</span><span style="">ConIO</span>  <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">liftIO</span> <span style="">f</span>
+<span style="">&gt;</span>       <span style="">eval'</span> <span style="color: red;">(</span><span style="">OrchIO</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">void</span> <span style="">$</span> <span style="">liftIO</span> <span style="">f</span>
+<span style="">&gt;</span>       <span style="">eval'</span> <span style="color: red;">(</span><span style="">NodeIO</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">return</span> <span style="color: red;">(</span><span style="">error</span> <span style="color: teal;">"NodeIO can't be used in the orchestrator decision path"</span><span style="color: red;">)</span>
+</code></pre>
+<p>
+Meanwhile, worker nodes ignore an <code>OrchIO</code> and <a href="https://github.com/Soostone/hadron/blob/8f78faecad49ac0cc35484a70c8b186ae916920b/src/Hadron/Controller.hs#L1022-L1038">lift the NodeIO action</a>.
+</p>
+<h3>
+Chart
+</h3>
+<p>
+The <a href="http://hackage.haskell.org/package/Chart-1.8/docs/Graphics-Rendering-Chart-Backend-Impl.html">Graphics.Rendering.Chart.Backend.Impl</a> module defines the the backend instructions:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>   <span style="">StrokePath</span> <span style="color: red;">::</span> <span style="">Path</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">()</span>
+<span style="">&gt;</span>   <span style="">FillPath</span>   <span style="color: red;">::</span> <span style="">Path</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">()</span>
+<span style="">&gt;</span>   <span style="">GetTextSize</span> <span style="color: red;">::</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">TextSize</span>
+<span style="">&gt;</span>   <span style="">DrawText</span>    <span style="color: red;">::</span> <span style="">Point</span> <span style="color: red;">-&gt;</span> <span style="">String</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">()</span>
+<span style="">&gt;</span>   <span style="">GetAlignments</span> <span style="color: red;">::</span> <span style="">ChartBackendInstr</span> <span style="">AlignmentFns</span>
+<span style="">&gt;</span>   <span style="">WithTransform</span>  <span style="color: red;">::</span> <span style="">Matrix</span> <span style="color: red;">-&gt;</span>  <span style="">Program</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">WithFontStyle</span>  <span style="color: red;">::</span> <span style="">FontStyle</span> <span style="color: red;">-&gt;</span> <span style="">Program</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">WithFillStyle</span>  <span style="color: red;">::</span> <span style="">FillStyle</span> <span style="color: red;">-&gt;</span> <span style="">Program</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">WithLineStyle</span>  <span style="color: red;">::</span> <span style="">LineStyle</span> <span style="color: red;">-&gt;</span> <span style="">Program</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+<span style="">&gt;</span>   <span style="">WithClipRegion</span> <span style="color: red;">::</span> <span style="">Rect</span> <span style="color: red;">-&gt;</span> <span style="">Program</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">BackendProgram</span> <span style="">a</span> <span style="color: red;">=</span> <span style="">Program</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+</code></pre>
+<p>
+Then the <a href="https://hackage.haskell.org/package/Chart-cairo-1.8/docs/Graphics-Rendering-Chart-Backend-Cairo.html">Graphics.Rendering.Chart.Backend.Cairo</a> module provides a way to run a <code>BackendProgram</code> for the cairo graphics engine:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runBackend'</span> <span style="color: red;">::</span> <span style="">CEnv</span> <span style="color: red;">-&gt;</span> <span style="">BackendProgram</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">C</span><span style="">.</span><span style="">Render</span> <span style="">a</span>
+<span style="">&gt;</span> <span style="">runBackend'</span> <span style="">env</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">view</span> <span style="">m</span><span style="color: red;">)</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">::</span> <span style="">CEnv</span> <span style="color: red;">-&gt;</span> <span style="">ProgramView</span> <span style="">ChartBackendInstr</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">C</span><span style="">.</span><span style="">Render</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">v</span><span style="color: red;">)</span><span style="color: red;">=</span> <span style="">return</span> <span style="">v</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">StrokePath</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cStrokePath</span> <span style="">env</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">FillPath</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cFillPath</span> <span style="">env</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">GetTextSize</span> <span style="">s</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cTextSize</span> <span style="">s</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">DrawText</span> <span style="">p</span> <span style="">s</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cDrawText</span> <span style="">env</span> <span style="">p</span> <span style="">s</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">GetAlignments</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">return</span> <span style="color: red;">(</span><span style="">ceAlignmentFns</span> <span style="">env</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">WithTransform</span> <span style="">m</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cWithTransform</span> <span style="">env</span> <span style="">m</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">WithFontStyle</span> <span style="">font</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cWithFontStyle</span> <span style="">env</span> <span style="">font</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">WithFillStyle</span> <span style="">fs</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cWithFillStyle</span> <span style="">env</span> <span style="">fs</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">WithLineStyle</span> <span style="">ls</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cWithLineStyle</span> <span style="">env</span> <span style="">ls</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">env</span> <span style="color: red;">(</span><span style="">WithClipRegion</span> <span style="">r</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">cWithClipRegion</span> <span style="">env</span> <span style="">r</span> <span style="">p</span> <span style="">&gt;&gt;=</span> <span style="">step</span> <span style="">env</span> <span style="">f</span>
+</code></pre>
+<p>
+Meanwhile, <a href="https://hackage.haskell.org/package/Chart-diagrams-1.8/docs/Graphics-Rendering-Chart-Backend-Diagrams.html">Graphics.Rendering.Chart.Backend.Diagrams</a> does the same but for <a href="https://hackage.haskell.org/package/diagrams-lib">diagrams</a>:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">runBackend'</span> <span style="">tr</span> <span style="">m</span> <span style="color: red;">=</span> <span style="">eval</span> <span style="">tr</span> <span style="">$</span> <span style="">view</span> <span style="">$</span> <span style="">m</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="color: red;">::</span> <span style="color: red;">(</span><span style="">D</span><span style="">.</span><span style="">Renderable</span> <span style="color: red;">(</span><span style="">D</span><span style="">.</span><span style="">Path</span> <span style="">V2</span> <span style="color: red;">(</span><span style="">N</span> <span style="">b</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="">b</span><span style="color: red;">,</span> <span style="">D</span><span style="">.</span><span style="">Renderable</span> <span style="">t</span> <span style="">b</span><span style="color: red;">,</span> <span style="">D</span><span style="">.</span><span style="">TypeableFloat</span> <span style="color: red;">(</span><span style="">N</span> <span style="">b</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>          <span style="color: red;">=&gt;</span> <span style="">TextRender</span> <span style="">b</span> <span style="">t</span> <span style="color: red;">-&gt;</span> <span style="">ProgramView</span> <span style="">ChartBackendInstr</span> <span style="">a</span>
+<span style="">&gt;</span>          <span style="color: red;">-&gt;</span> <span style="">DState</span> <span style="color: red;">(</span><span style="">N</span> <span style="">b</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">D</span><span style="">.</span><span style="">QDiagram</span> <span style="">b</span> <span style="">V2</span> <span style="color: red;">(</span><span style="">N</span> <span style="">b</span><span style="color: red;">)</span> <span style="">Any</span><span style="color: red;">,</span> <span style="">a</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">v</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">return</span> <span style="color: red;">(</span><span style="">mempty</span><span style="color: red;">,</span> <span style="">v</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">StrokePath</span> <span style="">p</span>   <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dStrokePath</span>  <span style="">p</span>   <span style="">&lt;&gt;#</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">FillPath</span>   <span style="">p</span>   <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dFillPath</span>    <span style="">p</span>   <span style="">&lt;&gt;#</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span><span style="color: red;">@</span><span style="">TextRenderSvg</span>    <span style="color: red;">(</span><span style="">DrawText</span>   <span style="">p</span> <span style="">s</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dDrawTextSvg</span>    <span style="">p</span> <span style="">s</span> <span style="">&lt;&gt;#</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span><span style="color: red;">@</span><span style="">TextRenderNative</span> <span style="color: red;">(</span><span style="">DrawText</span>   <span style="">p</span> <span style="">s</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dDrawTextNative</span> <span style="">p</span> <span style="">s</span> <span style="">&lt;&gt;#</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">GetTextSize</span>  <span style="">s</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dTextSize</span>      <span style="">s</span> <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">GetAlignments</span>  <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dAlignmentFns</span>    <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">WithTransform</span> <span style="">m</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span>  <span style="color: red;">=</span> <span style="">dWithTransform</span>  <span style="">tr</span> <span style="">m</span>  <span style="">p</span> <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">WithFontStyle</span> <span style="">fs</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dWithFontStyle</span>  <span style="">tr</span> <span style="">fs</span> <span style="">p</span> <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">WithFillStyle</span> <span style="">fs</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dWithFillStyle</span>  <span style="">tr</span> <span style="">fs</span> <span style="">p</span> <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">WithLineStyle</span> <span style="">ls</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dWithLineStyle</span>  <span style="">tr</span> <span style="">ls</span> <span style="">p</span> <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+<span style="">&gt;</span>     <span style="">eval</span> <span style="">tr</span> <span style="color: red;">(</span><span style="">WithClipRegion</span> <span style="">r</span> <span style="">p</span> <span style="">:&gt;&gt;=</span> <span style="">f</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">dWithClipRegion</span> <span style="">tr</span> <span style="">r</span>  <span style="">p</span> <span style="">&lt;&gt;=</span> <span style="">step</span> <span style="">tr</span> <span style="">f</span>
+</code></pre>
+<h3>
+redis-io
+</h3>
+<p>
+The <a href="https://hackage.haskell.org/package/redis-resp-0.4.0/docs/Data-Redis-Command.html">Data.Redis.Command</a> module defines heaps of commands:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">Command</span> <span style="color: red;">::</span> <span style="">*</span> <span style="color: red;">-&gt;</span> <span style="">*</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Connection</span>
+<span style="">&gt;</span>     <span style="">Ping</span>   <span style="color: red;">::</span> <span style="">Resp</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">()</span>
+<span style="">&gt;</span>     <span style="">Echo</span>   <span style="color: red;">::</span> <span style="">FromByteString</span> <span style="">a</span> <span style="color: red;">=&gt;</span> <span style="">Resp</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">a</span>
+<span style="">&gt;</span>     <span style="">Auth</span>   <span style="color: red;">::</span> <span style="">Resp</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">()</span>
+<span style="">&gt;</span>     <span style="">Quit</span>   <span style="color: red;">::</span> <span style="">Resp</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">()</span>
+<span style="">&gt;</span>     <span style="">Select</span> <span style="color: red;">::</span> <span style="">Resp</span> <span style="color: red;">-&gt;</span> <span style="">Command</span> <span style="">()</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="color: green;">-- Many more here.</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">type</span> <span style="">Redis</span>  <span style="color: red;">=</span> <span style="">ProgramT</span> <span style="">Command</span>
+</code></pre>
+<p>
+and <code>Database.Redis.IO.Client</code>, an internal module of <a href="https://hackage.haskell.org/package/redis-io">redis-io</a>, defines how to interpret the redis commands:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="">eval</span> <span style="">f</span> <span style="">conn</span> <span style="">red</span> <span style="color: red;">=</span> <span style="">run</span> <span style="">conn</span> <span style="">[]</span> <span style="">red</span>
+<span style="">&gt;</span>   <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">run</span> <span style="color: red;">::</span> <span style="">Connection</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">IO</span> <span style="">()</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">Redis</span> <span style="">IO</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">IO</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="color: red;">[</span><span style="">IO</span> <span style="">()</span><span style="color: red;">]</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">run</span> <span style="">h</span> <span style="">ii</span> <span style="">c</span> <span style="color: red;">=</span> <span style="color: blue; font-weight: bold;">do</span>
+<span style="">&gt;</span>         <span style="">r</span> <span style="color: red;">&lt;-</span> <span style="">viewT</span> <span style="">c</span>
+<span style="">&gt;</span>         <span style="color: blue; font-weight: bold;">case</span> <span style="">r</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>             <span style="">Return</span> <span style="">a</span> <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">ii</span><span style="color: red;">)</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>             <span style="color: green;">-- Connection</span>
+<span style="">&gt;</span>             <span style="">Ping</span>   <span style="">x</span> <span style="">:&gt;&gt;=</span> <span style="">k</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">h</span> <span style="">x</span> <span style="color: red;">(</span><span style="">matchStr</span> <span style="color: teal;">"PING"</span> <span style="color: teal;">"PONG"</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">i</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">run</span> <span style="">h</span> <span style="color: red;">(</span><span style="">i</span><span style="">:</span><span style="">ii</span><span style="color: red;">)</span> <span style="">$</span> <span style="">k</span> <span style="">a</span>
+<span style="">&gt;</span>             <span style="">Echo</span>   <span style="">x</span> <span style="">:&gt;&gt;=</span> <span style="">k</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">h</span> <span style="">x</span> <span style="color: red;">(</span><span style="">readBulk</span> <span style="color: teal;">"ECHO"</span><span style="color: red;">)</span>        <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">i</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">run</span> <span style="">h</span> <span style="color: red;">(</span><span style="">i</span><span style="">:</span><span style="">ii</span><span style="color: red;">)</span> <span style="">$</span> <span style="">k</span> <span style="">a</span>
+<span style="">&gt;</span>             <span style="">Auth</span>   <span style="">x</span> <span style="">:&gt;&gt;=</span> <span style="">k</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">h</span> <span style="">x</span> <span style="color: red;">(</span><span style="">matchStr</span> <span style="color: teal;">"AUTH"</span> <span style="color: teal;">"OK"</span><span style="color: red;">)</span>   <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">i</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">run</span> <span style="">h</span> <span style="color: red;">(</span><span style="">i</span><span style="">:</span><span style="">ii</span><span style="color: red;">)</span> <span style="">$</span> <span style="">k</span> <span style="">a</span>
+<span style="">&gt;</span>             <span style="">Quit</span>   <span style="">x</span> <span style="">:&gt;&gt;=</span> <span style="">k</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">h</span> <span style="">x</span> <span style="color: red;">(</span><span style="">matchStr</span> <span style="color: teal;">"QUIT"</span> <span style="color: teal;">"OK"</span><span style="color: red;">)</span>   <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">i</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">run</span> <span style="">h</span> <span style="color: red;">(</span><span style="">i</span><span style="">:</span><span style="">ii</span><span style="color: red;">)</span> <span style="">$</span> <span style="">k</span> <span style="">a</span>
+<span style="">&gt;</span>             <span style="">Select</span> <span style="">x</span> <span style="">:&gt;&gt;=</span> <span style="">k</span> <span style="color: red;">-&gt;</span> <span style="">f</span> <span style="">h</span> <span style="">x</span> <span style="color: red;">(</span><span style="">matchStr</span> <span style="color: teal;">"SELECT"</span> <span style="color: teal;">"OK"</span><span style="color: red;">)</span> <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: red;">(</span><span style="">a</span><span style="color: red;">,</span> <span style="">i</span><span style="color: red;">)</span> <span style="color: red;">-&gt;</span> <span style="">run</span> <span style="">h</span> <span style="color: red;">(</span><span style="">i</span><span style="">:</span><span style="">ii</span><span style="color: red;">)</span> <span style="">$</span> <span style="">k</span> <span style="">a</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>             <span style="color: green;">-- Many more here, snipped</span>
+</code></pre>
+<h3>
+language-puppet
+</h3>
+<p>
+The internal module <code>Puppet.Interpreter.Types</code> of <a href="https://hackage.haskell.org/package/language-puppet">language-puppet</a> defines an interpreter instruction type:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: blue; font-weight: bold;">data</span> <span style="">InterpreterInstr</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span>     <span style="">GetNativeTypes</span>      <span style="color: red;">::</span> <span style="">InterpreterInstr</span> <span style="color: red;">(</span><span style="">Container</span> <span style="">NativeTypeMethods</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">GetStatement</span>        <span style="color: red;">::</span> <span style="">TopLevelType</span> <span style="color: red;">-&gt;</span> <span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterInstr</span> <span style="">Statement</span>
+<span style="">&gt;</span>     <span style="">ComputeTemplate</span>     <span style="color: red;">::</span> <span style="">Either</span> <span style="">Text</span> <span style="">T</span><span style="">.</span><span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterState</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterInstr</span> <span style="">T</span><span style="">.</span><span style="">Text</span>
+<span style="">&gt;</span>     <span style="">ExternalFunction</span>    <span style="color: red;">::</span> <span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="color: red;">[</span><span style="">PValue</span><span style="color: red;">]</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterInstr</span> <span style="">PValue</span>
+<span style="">&gt;</span>     <span style="">GetNodeName</span>         <span style="color: red;">::</span> <span style="">InterpreterInstr</span> <span style="">Text</span>
+<span style="">&gt;</span>     <span style="">HieraQuery</span>          <span style="color: red;">::</span> <span style="">Container</span> <span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">T</span><span style="">.</span><span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">HieraQueryType</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterInstr</span> <span style="color: red;">(</span><span style="">Maybe</span> <span style="">PValue</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">GetCurrentCallStack</span> <span style="color: red;">::</span> <span style="">InterpreterInstr</span> <span style="color: red;">[</span><span style="">String</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">IsIgnoredModule</span>     <span style="color: red;">::</span> <span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterInstr</span> <span style="">Bool</span>
+<span style="">&gt;</span>     <span style="">IsExternalModule</span>    <span style="color: red;">::</span> <span style="">Text</span> <span style="color: red;">-&gt;</span> <span style="">InterpreterInstr</span> <span style="">Bool</span>
+<span style="">&gt;</span>     <span style="">IsStrict</span>            <span style="color: red;">::</span> <span style="">InterpreterInstr</span> <span style="">Bool</span>
+<span style="">&gt;</span>     <span style="">PuppetPaths</span>         <span style="color: red;">::</span> <span style="">InterpreterInstr</span> <span style="">PuppetDirPaths</span>
+<span style="">&gt;</span>     <span style="color: green;">-- Many more here, snipped.</span>
+</code></pre>
+<p>
+Then <code>Puppet.Interpreter.IO</code> provides:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- The internal (not exposed) eval function</span>
+<span style="">&gt;</span> <span style="">eval</span> <span style="color: red;">::</span> <span style="">Monad</span> <span style="">m</span>
+<span style="">&gt;</span>      <span style="color: red;">=&gt;</span> <span style="">InterpreterReader</span> <span style="">m</span>
+<span style="">&gt;</span>      <span style="color: red;">-&gt;</span> <span style="">InterpreterState</span>
+<span style="">&gt;</span>      <span style="color: red;">-&gt;</span> <span style="">ProgramViewT</span> <span style="">InterpreterInstr</span> <span style="color: red;">(</span><span style="">State</span> <span style="">InterpreterState</span><span style="color: red;">)</span> <span style="">a</span>
+<span style="">&gt;</span>      <span style="color: red;">-&gt;</span> <span style="">m</span> <span style="color: red;">(</span><span style="">Either</span> <span style="">PrettyError</span> <span style="">a</span><span style="color: red;">,</span> <span style="">InterpreterState</span><span style="color: red;">,</span> <span style="">InterpreterWriter</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">eval</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">s</span> <span style="color: red;">(</span><span style="">Return</span> <span style="">x</span><span style="color: red;">)</span> <span style="color: red;">=</span> <span style="">return</span> <span style="color: red;">(</span><span style="">Right</span> <span style="">x</span><span style="color: red;">,</span> <span style="">s</span><span style="color: red;">,</span> <span style="">mempty</span><span style="color: red;">)</span>
+<span style="">&gt;</span> <span style="">eval</span> <span style="">r</span> <span style="">s</span> <span style="color: red;">(</span><span style="">a</span> <span style="">:&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span> <span style="color: red;">=</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">let</span> <span style="">runInstr</span> <span style="color: red;">=</span> <span style="">interpretMonad</span> <span style="">r</span> <span style="">s</span> <span style="">.</span> <span style="">k</span> <span style="color: green;">-- run one instruction</span>
+<span style="">&gt;</span>         <span style="">thpe</span> <span style="color: red;">=</span> <span style="">interpretMonad</span> <span style="">r</span> <span style="">s</span> <span style="">.</span> <span style="">throwPosError</span> <span style="">.</span> <span style="">getError</span>
+<span style="">&gt;</span>         <span style="">pdb</span> <span style="color: red;">=</span> <span style="">r</span><span style="">^.</span><span style="">readerPdbApi</span>
+<span style="">&gt;</span>         <span style="">strFail</span> <span style="">iof</span> <span style="">errf</span> <span style="color: red;">=</span> <span style="">iof</span> <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: blue; font-weight: bold;">case</span>
+<span style="">&gt;</span>             <span style="">Left</span> <span style="">rr</span> <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="color: red;">(</span><span style="">errf</span> <span style="color: red;">(</span><span style="">string</span> <span style="">rr</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">Right</span> <span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="">x</span>
+<span style="">&gt;</span>         <span style="">canFail</span> <span style="">iof</span> <span style="color: red;">=</span> <span style="">iof</span> <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: blue; font-weight: bold;">case</span>
+<span style="">&gt;</span>             <span style="">S</span><span style="">.</span><span style="">Left</span> <span style="">err</span> <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="">err</span>
+<span style="">&gt;</span>             <span style="">S</span><span style="">.</span><span style="">Right</span> <span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="">x</span>
+<span style="">&gt;</span>         <span style="">canFailX</span> <span style="">iof</span> <span style="color: red;">=</span> <span style="">runExceptT</span> <span style="">iof</span> <span style="">&gt;&gt;=</span> <span style="color: red;">\</span><span style="color: blue; font-weight: bold;">case</span>
+<span style="">&gt;</span>             <span style="">Left</span> <span style="">err</span> <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="">err</span>
+<span style="">&gt;</span>             <span style="">Right</span> <span style="">x</span> <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="">x</span>
+<span style="">&gt;</span>         <span style="">logStuff</span> <span style="">x</span> <span style="">c</span> <span style="color: red;">=</span> <span style="color: red;">(</span><span class="hs-sel">_3</span> <span style="">%~</span> <span style="color: red;">(</span><span style="">x</span> <span style="">&lt;&gt;</span><span style="color: red;">)</span><span style="color: red;">)</span> <span style="">&lt;$&gt;</span> <span style="">c</span>
+<span style="">&gt;</span>     <span style="color: blue; font-weight: bold;">in</span>  <span style="color: blue; font-weight: bold;">case</span> <span style="">a</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>             <span style="">IsStrict</span>                     <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="color: red;">(</span><span style="">r</span> <span style="">^.</span> <span style="">readerIsStrict</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">ExternalFunction</span> <span style="">fname</span> <span style="">args</span>  <span style="color: red;">-&gt;</span> <span style="color: blue; font-weight: bold;">case</span> <span style="">r</span> <span style="">^.</span> <span style="">readerExternalFunc</span> <span style="">.</span> <span style="">at</span> <span style="">fname</span> <span style="color: blue; font-weight: bold;">of</span>
+<span style="">&gt;</span>                                                 <span style="">Just</span> <span style="">fn</span> <span style="color: red;">-&gt;</span> <span style="">interpretMonad</span> <span style="">r</span> <span style="">s</span> <span style="color: red;">(</span> <span style="">fn</span> <span style="">args</span> <span style="">&gt;&gt;=</span> <span style="">k</span><span style="color: red;">)</span>
+<span style="">&gt;</span>                                                 <span style="">Nothing</span> <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="color: red;">(</span><span style="">PrettyError</span> <span style="color: red;">(</span><span style="color: teal;">"Unknown function: "</span> <span style="">&lt;&gt;</span> <span style="">ttext</span> <span style="">fname</span><span style="color: red;">)</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">GetStatement</span> <span style="">topleveltype</span> <span style="">toplevelname</span>
+<span style="">&gt;</span>                                          <span style="color: red;">-&gt;</span> <span style="">canFail</span> <span style="color: red;">(</span><span style="color: red;">(</span><span style="">r</span> <span style="">^.</span> <span style="">readerGetStatement</span><span style="color: red;">)</span> <span style="">topleveltype</span> <span style="">toplevelname</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">ComputeTemplate</span> <span style="">fn</span> <span style="">stt</span>       <span style="color: red;">-&gt;</span> <span style="">canFail</span> <span style="color: red;">(</span><span style="color: red;">(</span><span style="">r</span> <span style="">^.</span> <span style="">readerGetTemplate</span><span style="color: red;">)</span> <span style="">fn</span> <span style="">stt</span> <span style="">r</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">WriterTell</span> <span style="">t</span>                 <span style="color: red;">-&gt;</span> <span style="">logStuff</span> <span style="">t</span> <span style="color: red;">(</span><span style="">runInstr</span> <span style="">()</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">WriterPass</span> <span style="color: blue; font-weight: bold;">_</span>                 <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="color: teal;">"WriterPass"</span>
+<span style="">&gt;</span>             <span style="">WriterListen</span> <span style="color: blue; font-weight: bold;">_</span>               <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="color: teal;">"WriterListen"</span>
+<span style="">&gt;</span>             <span style="">PuppetPaths</span>                  <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="color: red;">(</span><span style="">r</span> <span style="">^.</span> <span style="">readerPuppetPaths</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">GetNativeTypes</span>               <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="color: red;">(</span><span style="">r</span> <span style="">^.</span> <span style="">readerNativeTypes</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">ErrorThrow</span> <span style="">d</span>                 <span style="color: red;">-&gt;</span> <span style="">return</span> <span style="color: red;">(</span><span style="">Left</span> <span style="">d</span><span style="color: red;">,</span> <span style="">s</span><span style="color: red;">,</span> <span style="">mempty</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="">ErrorCatch</span> <span style="color: blue; font-weight: bold;">_</span> <span style="color: blue; font-weight: bold;">_</span>               <span style="color: red;">-&gt;</span> <span style="">thpe</span> <span style="color: teal;">"ErrorCatch"</span>
+<span style="">&gt;</span>             <span style="">GetNodeName</span>                  <span style="color: red;">-&gt;</span> <span style="">runInstr</span> <span style="color: red;">(</span><span style="">r</span> <span style="">^.</span> <span style="">readerNodename</span><span style="color: red;">)</span>
+<span style="">&gt;</span>             <span style="color: green;">-- More cases here, snipped.</span>
+</code></pre>
+<p>
+Since <code>InterpreterInstr</code> is a normal data type, it’s possible to write an instance of <code>Pretty</code> so that warnings or error messages look nicer:
+</p>
+<pre class="sourceCode haskell"><code class="sourceCode haskell"><span style="">&gt;</span> <span style="color: green;">-- Puppet.Interpreter.PrettyPrinter</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span> <span style="color: blue; font-weight: bold;">instance</span> <span style="">Pretty</span> <span style="color: red;">(</span><span style="">InterpreterInstr</span> <span style="">a</span><span style="color: red;">)</span> <span style="color: blue; font-weight: bold;">where</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">...</span>
+<span style="">&gt;</span> 
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="color: red;">(</span><span style="">ExternalFunction</span> <span style="">fn</span> <span style="">args</span><span style="color: red;">)</span>  <span style="color: red;">=</span> <span style="">pf</span> <span style="color: red;">(</span><span style="">ttext</span> <span style="">fn</span><span style="color: red;">)</span> <span style="color: red;">(</span><span style="">map</span> <span style="">pretty</span> <span style="">args</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="">GetNodeName</span>                 <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"GetNodeName"</span> <span style="">[]</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="color: red;">(</span><span style="">HieraQuery</span> <span style="color: blue; font-weight: bold;">_</span> <span style="">q</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span>          <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"HieraQuery"</span> <span style="color: red;">[</span><span style="">ttext</span> <span style="">q</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="">GetCurrentCallStack</span>         <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"GetCurrentCallStack"</span> <span style="">[]</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="color: red;">(</span><span style="">ErrorThrow</span> <span style="">rr</span><span style="color: red;">)</span>             <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"ErrorThrow"</span> <span style="color: red;">[</span><span style="">getError</span> <span style="">rr</span><span style="color: red;">]</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="color: red;">(</span><span style="">ErrorCatch</span> <span style="color: blue; font-weight: bold;">_</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span>            <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"ErrorCatch"</span> <span style="">[]</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="color: red;">(</span><span style="">WriterTell</span> <span style="">t</span><span style="color: red;">)</span>              <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"WriterTell"</span> <span style="color: red;">(</span><span style="">map</span> <span style="color: red;">(</span><span style="">pretty</span> <span style="">.</span> <span style="">view</span> <span class="hs-sel">_2</span><span style="color: red;">)</span> <span style="">t</span><span style="color: red;">)</span>
+<span style="">&gt;</span>     <span style="">pretty</span> <span style="color: red;">(</span><span style="">WriterPass</span> <span style="color: blue; font-weight: bold;">_</span><span style="color: red;">)</span>              <span style="color: red;">=</span> <span style="">pf</span> <span style="color: teal;">"WriterPass"</span> <span style="">[]</span>
+</code></pre>
+<h2>
+References
+</h2>
+<p>
+<ul>
+<li>
+<a href="http://apfelmus.nfshost.com/articles/operational-monad.html">The Operational Monad Tutorial</a>
+</li>
+<li>
+<a href="https://hackage.haskell.org/package/operational">Control.Monad.Operational</a>
+</li>
+<li>
+<a href="http://packdeps.haskellers.com/reverse/operational">operational’s reverse dependencies</a>
+</li>
+<li>
+<a href="https://vimeo.com/90189610">Conquering Hadoop with Haskell and Ozgun Ataman</a>
+</li>
+</ul>
+</p>
+<div id="refs" class="references">
+
+</div>
