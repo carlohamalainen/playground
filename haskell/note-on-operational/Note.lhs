@@ -2,6 +2,9 @@
 on <a href="https://carlo-hamalainen.net/blog/2014/6/7/notes-on-free-monads">free monads</a>
 and wondered what it would look like using <a href="https://hackage.haskell.org/package/operational">operational</a>. Here we go! </p>
 
+<p> (Literate Haskell source for this blog post
+is <a href="https://github.com/carlohamalainen/playground/tree/master/haskell/note-on-operational">here</a>.) </p>
+
 <p> First, some imports. We use <a href="https://wiki.haskell.org/GADTs_for_dummies">GADTs</a>
 for our instruction type. </p>
 
