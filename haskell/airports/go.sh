@@ -1,1 +1,1 @@
-.cabal-sandbox/bin/airports +RTS -N16
+.cabal-sandbox/bin/airports +RTS -N4
