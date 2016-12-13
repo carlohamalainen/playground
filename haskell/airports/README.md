@@ -10,43 +10,75 @@ Say you have 16 cores:
 
     .cabal-sandbox/bin/airports +RTS -N16 > output.txt
 
-Computed grids (as at 2014-11-26-1153):
+Computed grids (as at 2016-12-13):
 
-    BWN
-    CNS
+    BBM
+    CLE
+    NTL
+
+    CNB
+    HTN
+    CLE
+
+    LPB
+    MEL
     NRT
 
-    ATL
-    MSE
-    MVD
+    LMN
+    PER
+    BLT
+
+    STL
+    CLE
+    LED
+
+    LGA
+    IAD
+    MNL
+
+    NRT
+    AUH
+    THG
+
+    STL
+    CHC
+    LGA
+
+    TWB
+    XNN
+    LRE
 
     SLC
     LED
     UDG
 
-    AAC
-    DEN
-    LPB
+    DCA
+    EAM
+    LIM
 
-    AKL
-    MBE
-    MVD
+    SVO
+    ZCO
+    MEL
 
-    BMA
-    LED
-    TXL
+    ARM
+    MEX
+    MXP
 
-    SLC
-    CPH
-    LBC
+    ARM
+    MEX
+    MSP
 
-    BCN
-    WNR
-    NST
+    BWI
+    CNS
+    NRT
 
-    STL
-    CHG
-    LGW
+    AMM
+    MEX
+    MSP
+
+    CCP
+    TPE
+    LHR
 
     BHN
     COR
@@ -56,54 +88,234 @@ Computed grids (as at 2014-11-26-1153):
     MEX
     ADL
 
-    HBA
-    BLK
-    ATL
-
-    LAS
-    PMO
-    BMI
-
-    AMM
-    KBV
-    LED
-
-    TSV
-    WIC
-    BNE
-
-    SCL
-    UDG
-    LGW
-
-    FRA
-    ROK
-    ATL
-
-    TWB
-    SIN
-    VCE
-
-    ATL
-    MUC
-    MKY
-
-    SLC
-    JED
-    UDG
+    MEL
+    UDR
+    CLE
 
     SCL
     JOE
     ORD
 
+    BMI
+    CNS
+    NLA
+
+    ATL
+    EWR
+    PBE
+
+    LGA
+    PER
+    BOM
+
+    BLT
+    LGA
     TWB
-    XNN
-    LRE
+
+    HBA
+    BLK
+    ATL
+
+    SVO
+    ZCO
+    DEL
+
+    SLC
+    CPH
+    LBC
+
+    MSP
+    UJE
+    COR
+
+    BMA
+    LED
+    TXL
+
+    AKL
+    RBE
+    MVD
+
+    SCL
+    UDG
+    LGW
+
+    CLE
+    ARM
+    LED
+
+    AKL
+    MBE
+    MVD
+
+    HND
+    BRE
+    ATL
+
+    AMM
+    BEU
+    SLC
+
+    SEA
+    COR
+    LIM
+
+    ATL
+    MSP
+    MVB
+
+    HND
+    BNE
+    ATL
+
+    BCN
+    WNR
+    NST
+
+    CFE
+    ARM
+    IAD
+
+    DCA
+    BNE
+    MSP
+
+    DCA
+    BNE
+    MXP
+
+    LAS
+    PUT
+    BHN
+
+    SZD
+    VCE
+    OOL
+
+    NAT
+    RUH
+    THG
+
+    PSA
+    MVD
+    OOL
 
     CNC
     NRT
     STL
 
+    AMM
+    KBV
+    LED
+
     TXL
     WNR
     BNE
+
+    AMM
+    REX
+    MXP
+
+    ARM
+    KBV
+    LED
+
+    SLC
+    THG
+    NRK
+
+    LAS
+    PUG
+    BHN
+
+    STL
+    CPE
+    LED
+
+    ARM
+    MVD
+    MDZ
+
+    TWB
+    SIN
+    VCE
+
+    STL
+    CPH
+    LER
+
+    LAS
+    PMO
+    BMI
+
+    MSP
+    UVE
+    COR
+
+    CTL
+    CPH
+    PER
+
+    STN
+    CHC
+    LGA
+
+    MUC
+    VLN
+    DPS
+
+    SZM
+    VCE
+    OOL
+
+    PMO
+    SVO
+    ADL
+
+    STL
+    CHG
+    LGW
+
+    BLA
+    ORD
+    MEL
+
+    FRA
+    ROK
+    ATL
+
+    ATL
+    MSE
+    MVD
+
+    AAC
+    DEN
+    LPB
+
+    SLC
+    JED
+    UDG
+
+    TSV
+    WIC
+    BNE
+
+    STL
+    CAI
+    LIM
+
+    ATL
+    MUC
+    MKY
+
+    AMM
+    RVD
+    MDZ
+
+    MVD
+    ULP
+    CNS
+
+    BWN
+    CNS
+    NRT
