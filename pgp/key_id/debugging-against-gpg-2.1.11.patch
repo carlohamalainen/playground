@@ -1,0 +1,145 @@
+diff -r gnupg-2.1.11/g10/keyid.c gnupg-2.1.11-debugging/g10/keyid.c
+151a152,153
+>   printf("hash_public_key..., npkey = %d\n", npkey);
+> 
+193a196,200
+>                 //printf("HERE %d, nbytes = %d\n", i, nbytes);
+>                 //printf("====gcry_mpi_dump\n");
+>                 //gcry_mpi_dump(pk->pkey[i]);
+>                 //printf("====gcry_mpi_dump\n");
+> 
+216a224,235
+>   printf("ZZZ: n: %d\n", n);
+>   printf("ZZZ: %02X\n", 0x99 );
+>   printf("ZZZ: %02X\n", (n >> 8) & 0xFF );
+>   printf("ZZZ: %02X\n", n & 0xFF );
+>   printf("ZZZ: %02X\n", pk->version );
+>   printf("ZZZ: %02X\n", (pk->timestamp >> 24) & 0xFF);
+>   printf("ZZZ: %02X\n", (pk->timestamp >> 16) & 0xFF);
+>   printf("ZZZ: %02X\n", (pk->timestamp >>  8) & 0xFF);
+>   printf("ZZZ: %02X\n", (pk->timestamp      ) & 0xFF);
+>   printf("ZZZ: %02X\n", pk->pubkey_algo );
+>   printf("\n");
+> 
+220c239,240
+<       if (pp[0])
+---
+>       if (pp[0]) {
+>           printf("md_write 01\n");
+221a242
+>       }
+227c248,254
+<           if (pp[i])
+---
+>           if (pp[i]) {
+>             printf("md_write 02 - %d\n", i);
+>             printf("pp[%d]: , length %d  ::: ", i, nn[i]);
+>             for(int z = 0; z < nn[i]; z++)
+>                 printf("%02X ", (pp[i])[z]);
+>             printf("\n");
+> 
+228a256
+>           }
+diff -r gnupg-2.1.11/g10/parse-packet.c gnupg-2.1.11-debugging/g10/parse-packet.c
+173a174,181
+>   printf("buf, nbytes: %d; ", nbytes);
+>   printf("%02X", buf[0]);
+>   printf("%02X", buf[1]);
+>   printf("%02X", buf[2]);
+>   printf("%02X", buf[3]);
+>   printf("%02X", buf[4]);
+>   printf("\n");
+> 
+diff -r gnupg-2.1.11/g10/sig-check.c gnupg-2.1.11-debugging/g10/sig-check.c
+382a383
+>     printf("check_signature_end_00\n");
+386a388
+>     printf("check_signature_end_01\n");
+398a401,402
+>     printf("check_signature_end_02\n");
+> 
+401c405
+< 	gcry_md_putc( digest, sig->version );
+---
+>         gcry_md_putc( digest, sig->version );
+403a408
+>         printf("sig->version < 4...\n");
+410a416
+>         printf("sig->version >= 4...\n");
+416a423,427
+>         printf("We have sig->hashed; n = %d\n", n);
+>         printf("sig->hashed->data: ");
+>         for(int z = 0; z < n; z++)
+>             printf("%02X", sig->hashed->data[z]);
+>         printf("\n");
+428a440,441
+>     printf("sig->version: %02X\n", sig->version);
+>     printf("n: %d\n", n);
+435a449,456
+> 
+>     printf("buf[0] = %02X\n", sig->version);
+>     printf("buf[1] = %02X\n", 0xff);
+>     printf("buf[2] = %02X\n", n >> 24);
+>     printf("buf[3] = %02X\n", n >> 16);
+>     printf("buf[4] = %02X\n", n >>  8);
+>     printf("buf[5] = %02X\n", n);
+> 
+439a461,470
+>     unsigned char *xxx_digest;
+> 	xxx_digest = gcry_md_read(digest, sig->digest_algo);
+> 	printf("%02X", xxx_digest[0]);
+> 	printf("%02X", xxx_digest[1]);
+> 	printf("%02X", xxx_digest[2]);
+> 	printf("%02X", xxx_digest[3]);
+> 	printf("\n");
+> 
+>     printf("check_signature_end_03 - added some magic\n");
+> 
+441a473
+> 
+448a481,482
+>     printf("check_signature_end_04 - verified the signature\n");
+> 
+733a768,770
+>   printf("sig_class: 0x%02X\n", sig->sig_class);
+>   printf("algo: %02X\n", algo);
+> 
+737a775,776
+>   opt.no_sig_cache = 1;
+> 
+752a792
+>           printf("rc0: %d\n", rc);
+759a800
+>   printf("rc1: %d\n", rc);
+762a804
+>   printf("rc2: %d\n", rc);
+765a808,810
+> 
+>   printf("\t\t\tNow here...\n");
+> 
+807a853
+>       printf("in 0x18 case...\n");
+809a856,866
+>       printf("sig->keyid: ");
+>       printf("%02X", sig->keyid[0]);
+>       printf("%02X", sig->keyid[1]);
+>       printf("\n");
+> 
+>       printf("snode->pkt->pkt.public_key->keyid: ");
+>       printf("%02X", snode->pkt->pkt.public_key->keyid[0]);
+>       printf("%02X", snode->pkt->pkt.public_key->keyid[1]);
+>       printf("\n");
+> 
+> 
+826a884
+>         printf("HASHING pk...\n");
+827a886,888
+>         printf("///HASHING pk...\n");
+> 
+>         printf("HASHING snode->pkt->pkt.public_key...\n");
+828a890,892
+>         printf("///HASHING pk...\n");
+> 
+>         printf("NOW CALLING check_signature_end...\n");
+893a958
+>     printf("LEAVING check_key_signature2! rc = %d\n", rc);
