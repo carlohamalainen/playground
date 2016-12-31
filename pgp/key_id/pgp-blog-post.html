@@ -1,0 +1,613 @@
+<p> I recently got two <a href="https://www.yubico.com/">YubiKeys</a> to try out another form of 2FA and to see how they work with
+my PGP setup (Enigmail and Thunderbird). I followed ankitrasto's
+guide (<a href="https://ankitrasto.wordpress.com/2015/08/16/part-12-email-encryption-with-the-yubikey-neo-gpg-and-linux/">part 1</a>
+and <a href="https://ankitrasto.wordpress.com/2015/10/20/part-22-email-encryption-with-the-yubikey-neo-gpg-and-linux/">part 2</a>)
+to move a key to the YubiKey. </p>
+
+<p> I then exported my public key with <code>gpg2 -a --export carlo@carlo-hamalainen.net</code> and sent it to a friend.
+He replied with the reasonable question: why didn't the fingerprint <code>E3E4A5B8</code> change? The exported data changed (was longer) yet
+the fingerprint, which looks like a hash, was the same. </p>
+
+<p> What's going on here is that originally I had a main key <code>E3E4A5B8</code> for
+signing (the "S" next to usage) and certification (the "C"). Meanwhile, encryption was
+done using a subkey <code>81E07A3C</code> (the "E").
+
+<pre>
+$ gpg2 --edit-key carlo@carlo-hamalainen.net
+gpg (GnuPG) 2.1.11; Copyright (C) 2016 Free Software Foundation, Inc.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Secret key is available.
+
+sec  rsa4096/E3E4A5B8
+     created: 2013-07-10  expires: never       usage: SC 
+     trust: ultimate      validity: ultimate
+ssb  rsa4096/81E07A3C
+     created: 2013-07-10  expires: never       usage: E  
+[ultimate] (1). Carlo Hamalainen <carlo@carlo-hamalainen.net>
+</pre>
+
+<p> From my friend's perspective, I only had one "public key", the one with fingerprint <code>E3E4A5B8</code>. </p>
+
+<p> When I added two subkeys (one for each YubiKey), I got <code>BE8897FA</code> and <code>766D56F8</code>. These
+entries have a <code>card-no</code> which refers to the serial number of the YubiKey where the subkey lives. </p>
+
+<pre>
+$ gpg2 --edit-key carlo@carlo-hamalainen.net
+gpg (GnuPG) 2.1.11; Copyright (C) 2016 Free Software Foundation, Inc.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Secret key is available.
+
+sec  rsa4096/E3E4A5B8
+     created: 2013-07-10  expires: never       usage: SC 
+     trust: ultimate      validity: ultimate
+ssb  rsa4096/81E07A3C
+     created: 2013-07-10  expires: never       usage: E  
+ssb  rsa2048/BE8897FA
+     created: 2016-11-20  expires: never       usage: E  
+     card-no: 0006 XXXXXXXX
+ssb  rsa2048/766D56F8
+     created: 2016-12-13  expires: never       usage: E  
+     card-no: 0006 YYYYYYYY
+[ultimate] (1). Carlo Hamalainen <carlo@carlo-hamalainen.net>
+</pre>
+
+<p> To see more detail about the keys, we have to inspect the packets in the export. </p>
+
+<h2>Packet dump</h2> 
+
+We can use <code>gpg2 --list-packets --verbose</code> to see what is in the output of <code>gpg2 -a --export</code>. </p>
+
+<p> Here is the original packet dump when I had just the main key and the encryption subkey: </p>
+
+<pre>
+$ gpg2 -a --export | gpg2 --list-packets --verbose
+<span style="color:green;">
+# off=0 ctb=99 tag=6 hlen=3 plen=525
+:public key packet:
+    version 4, algo 1, created 1373439395, expires 0
+    pkey[0]: C35E579D722847E70515382572B28200 (very long line, snipped)
+    pkey[1]: 010001
+    keyid: 269E0DC4E3E4A5B8
+# off=528 ctb=b4 tag=13 hlen=2 plen=45
+:user ID packet: "Carlo Hamalainen <carlo@carlo-hamalainen.net>"
+# off=575 ctb=89 tag=2 hlen=3 plen=568
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1373439395, md5len 0, sigclass 0x13
+    digest algo 2, begin of digest 05 44
+    hashed subpkt 2 len 4 (sig created 2013-07-10)
+    hashed subpkt 27 len 1 (key flags: 03)
+    hashed subpkt 11 len 5 (pref-sym-algos: 9 8 7 3 2)
+    hashed subpkt 21 len 5 (pref-hash-algos: 8 2 9 10 11)
+    hashed subpkt 22 len 3 (pref-zip-algos: 2 3 1)
+    hashed subpkt 30 len 1 (features: 01)
+    hashed subpkt 23 len 1 (key server preferences: 80)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED001<span style="color:purple;">
+# off=1146 ctb=b9 tag=14 hlen=3 plen=525
+:public sub key packet:
+    version 4, algo 1, created 1373439395, expires 0
+    pkey[0]: REDACTED002
+    pkey[1]: 010001
+    keyid: EF86D47281E07A3C
+# off=1674 ctb=89 tag=2 hlen=3 plen=543
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1373439395, md5len 0, sigclass 0x18
+    digest algo 2, begin of digest b9 63
+    hashed subpkt 2 len 4 (sig created 2013-07-10)
+    hashed subpkt 27 len 1 (key flags: 0C)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED003
+</pre>
+
+<p> With the two subkeys added for the YubiKeys, the dump now looks like this: </p>
+
+<pre><span style="color:green;">
+# off=0 ctb=99 tag=6 hlen=3 plen=525
+:public key packet:
+    version 4, algo 1, created 1373439395, expires 0
+    pkey[0]: C35E579D722847E70515382572B28200 (very long line, snipped)
+    pkey[1]: 010001
+    keyid: 269E0DC4E3E4A5B8
+# off=528 ctb=b4 tag=13 hlen=2 plen=45
+:user ID packet: "Carlo Hamalainen <carlo@carlo-hamalainen.net>"
+# off=575 ctb=89 tag=2 hlen=3 plen=568
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1373439395, md5len 0, sigclass 0x13
+    digest algo 2, begin of digest 05 44
+    hashed subpkt 2 len 4 (sig created 2013-07-10)
+    hashed subpkt 27 len 1 (key flags: 03)
+    hashed subpkt 11 len 5 (pref-sym-algos: 9 8 7 3 2)
+    hashed subpkt 21 len 5 (pref-hash-algos: 8 2 9 10 11)
+    hashed subpkt 22 len 3 (pref-zip-algos: 2 3 1)
+    hashed subpkt 30 len 1 (features: 01)
+    hashed subpkt 23 len 1 (key server preferences: 80)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED001<span style="color:purple;">
+# off=1146 ctb=b9 tag=14 hlen=3 plen=525
+:public sub key packet:
+    version 4, algo 1, created 1373439395, expires 0
+    pkey[0]: REDACTED002
+    pkey[1]: 010001
+    keyid: EF86D47281E07A3C
+# off=1674 ctb=89 tag=2 hlen=3 plen=543
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1373439395, md5len 0, sigclass 0x18
+    digest algo 2, begin of digest b9 63
+    hashed subpkt 2 len 4 (sig created 2013-07-10)
+    hashed subpkt 27 len 1 (key flags: 0C)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED003<span style="color:blue;">
+# off=2220 ctb=b9 tag=14 hlen=3 plen=269
+:public sub key packet:
+    version 4, algo 1, created 1479618635, expires 0
+    pkey[0]: REDACTED004
+    pkey[1]: 010001
+    keyid: 6D682AD2BE8897FA
+# off=2492 ctb=89 tag=2 hlen=3 plen=543
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1479618635, md5len 0, sigclass 0x18
+    digest algo 8, begin of digest bc 2c
+    hashed subpkt 2 len 4 (sig created 2016-11-20)
+    hashed subpkt 27 len 1 (key flags: 0C)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED005<span style="color:orange;">
+# off=3038 ctb=b9 tag=14 hlen=3 plen=269
+:public sub key packet:
+    version 4, algo 1, created 1481611279, expires 0
+    pkey[0]: REDACTED006
+    pkey[1]: 010001
+    keyid: 17118623766D56F8
+# off=3310 ctb=89 tag=2 hlen=3 plen=543
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1481611279, md5len 0, sigclass 0x18
+    digest algo 8, begin of digest a2 63
+    hashed subpkt 2 len 4 (sig created 2016-12-13)
+    hashed subpkt 27 len 1 (key flags: 0C)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED007
+</pre>
+
+<p> 1. In both dumps, my main key is the same (the <span style="color:green;">green block</span>). The fingerprint is 269E0DC4E3E4A5B8 in both dumps. </p>
+
+<p> 2. The <span style="color:purple;">next block</span> is the same in both dumps - it is the encryption subkey. The signature packet is our way of proving that the subkey
+is attached to our main key. Note the line <code>issuer key ID 269E0DC4E3E4A5B8</code>. </p>
+
+<p> 3. <span style="color:blue;">This part</span> is for my first YubiKey subkey, <code>BE8897FA</code>.
+The signature packet claims that the subkey is issued by <code>269E0DC4E3E4A5B8</code>. </p>
+
+<p> 4. <span style="color:orange;">This part</span> is for my second YubiKey subkey, <code>766D56F8</code>. Its
+signature packet also claims that the subkey is issued by <code>269E0DC4E3E4A5B8</code>. </p>
+
+
+<h2> pgpdump </h2>
+
+<p> An alternative to <code>gpg2 --list-packets --verbose</code> is <code>pgpdump</code>. This formats the packet dump
+in a nicer way, for example rendering the timestamp <code>created 1373439395</code>
+as <code>Public key creation time - Wed Jul 10 14:56:35 SGT 2013</code>. </p>
+    
+<pre>
+$ gpg2 --armor --export carlo@carlo-hamalainen.net | pgpdump
+<span style="color:green;">Old: Public Key Packet(tag 6)(525 bytes)
+    Ver 4 - new
+    Public key creation time - Wed Jul 10 14:56:35 SGT 2013
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    RSA n(4096 bits) - ...
+    RSA e(17 bits) - ...
+Old: User ID Packet(tag 13)(45 bytes)
+    User ID - Carlo Hamalainen <carlo@carlo-hamalainen.net>
+Old: Signature Packet(tag 2)(568 bytes)
+    Ver 4 - new
+    Sig type - Positive certification of a User ID and Public Key packet(0x13).
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    Hash alg - SHA1(hash 2)
+    Hashed Sub: signature creation time(sub 2)(4 bytes)
+        Time - Wed Jul 10 14:56:35 SGT 2013
+    Hashed Sub: key flags(sub 27)(1 bytes)
+        Flag - This key may be used to certify other keys
+        Flag - This key may be used to sign data
+    Hashed Sub: preferred symmetric algorithms(sub 11)(5 bytes)
+        Sym alg - AES with 256-bit key(sym 9)
+        Sym alg - AES with 192-bit key(sym 8)
+        Sym alg - AES with 128-bit key(sym 7)
+        Sym alg - CAST5(sym 3)
+        Sym alg - Triple-DES(sym 2)
+    Hashed Sub: preferred hash algorithms(sub 21)(5 bytes)
+        Hash alg - SHA256(hash 8)
+        Hash alg - SHA1(hash 2)
+        Hash alg - SHA384(hash 9)
+        Hash alg - SHA512(hash 10)
+        Hash alg - SHA224(hash 11)
+    Hashed Sub: preferred compression algorithms(sub 22)(3 bytes)
+        Comp alg - ZLIB <RFC1950>(comp 2)
+        Comp alg - BZip2(comp 3)
+        Comp alg - ZIP <RFC1951>(comp 1)
+    Hashed Sub: features(sub 30)(1 bytes)
+        Flag - Modification detection (packets 18 and 19)
+    Hashed Sub: key server preferences(sub 23)(1 bytes)
+        Flag - No-modify
+    Sub: issuer key ID(sub 16)(8 bytes)
+        Key ID - 0x269E0DC4E3E4A5B8
+    Hash left 2 bytes - 05 44
+    RSA m^d mod n(4095 bits) - ...
+        -&gt; PKCS-1</span>
+<span style="color:purple;">Old: Public Subkey Packet(tag 14)(525 bytes)
+    Ver 4 - new
+    Public key creation time - Wed Jul 10 14:56:35 SGT 2013
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    RSA n(4096 bits) - ...
+    RSA e(17 bits) - ...
+Old: Signature Packet(tag 2)(543 bytes)
+    Ver 4 - new
+    Sig type - Subkey Binding Signature(0x18).
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    Hash alg - SHA1(hash 2)
+    Hashed Sub: signature creation time(sub 2)(4 bytes)
+        Time - Wed Jul 10 14:56:35 SGT 2013
+    Hashed Sub: key flags(sub 27)(1 bytes)
+        Flag - This key may be used to encrypt communications
+        Flag - This key may be used to encrypt storage
+    Sub: issuer key ID(sub 16)(8 bytes)
+        Key ID - 0x269E0DC4E3E4A5B8
+    Hash left 2 bytes - b9 63
+    RSA m^d mod n(4095 bits) - ...
+        -&gt; PKCS-1</span>
+<span style="color:blue;">Old: Public Subkey Packet(tag 14)(269 bytes)
+    Ver 4 - new
+    Public key creation time - Sun Nov 20 13:10:35 SGT 2016
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    RSA n(2048 bits) - ...
+    RSA e(17 bits) - ...
+Old: Signature Packet(tag 2)(543 bytes)
+    Ver 4 - new
+    Sig type - Subkey Binding Signature(0x18).
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    Hash alg - SHA256(hash 8)
+    Hashed Sub: signature creation time(sub 2)(4 bytes)
+        Time - Sun Nov 20 13:10:35 SGT 2016
+    Hashed Sub: key flags(sub 27)(1 bytes)
+        Flag - This key may be used to encrypt communications
+        Flag - This key may be used to encrypt storage
+    Sub: issuer key ID(sub 16)(8 bytes)
+        Key ID - 0x269E0DC4E3E4A5B8
+    Hash left 2 bytes - bc 2c
+    RSA m^d mod n(4096 bits) - ...
+        -&gt; PKCS-1</span>
+<span style="color:orange;">Old: Public Subkey Packet(tag 14)(269 bytes)
+    Ver 4 - new
+    Public key creation time - Tue Dec 13 14:41:19 SGT 2016
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    RSA n(2048 bits) - ...
+    RSA e(17 bits) - ...
+Old: Signature Packet(tag 2)(543 bytes)
+    Ver 4 - new
+    Sig type - Subkey Binding Signature(0x18).
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    Hash alg - SHA256(hash 8)
+    Hashed Sub: signature creation time(sub 2)(4 bytes)
+        Time - Tue Dec 13 14:41:19 SGT 2016
+    Hashed Sub: key flags(sub 27)(1 bytes)
+        Flag - This key may be used to encrypt communications
+        Flag - This key may be used to encrypt storage
+    Sub: issuer key ID(sub 16)(8 bytes)
+        Key ID - 0x269E0DC4E3E4A5B8
+    Hash left 2 bytes - a2 63
+    RSA m^d mod n(4093 bits) - ...
+        -&gt; PKCS-1</span>
+</pre>
+
+<h2>Manually checking the packets</h2>
+
+<p> I noticed that the gpg2 dump for the packet at offset <code>3038</code> refers to the
+key id <code>17118623766D56F8</code>
+but the equivalent block from pgpdump has no key id: </p>
+
+<pre>
+# off=3038 ctb=b9 tag=14 hlen=3 plen=269
+:public sub key packet:
+    version 4, algo 1, created 1481611279, expires 0
+    pkey[0]: REDACTED006
+    pkey[1]: 010001
+    keyid: 17118623766D56F8
+</pre>
+
+<pre>
+Old: Public Subkey Packet(tag 14)(269 bytes)
+    Ver 4 - new
+    Public key creation time - Tue Dec 13 14:41:19 SGT 2016
+    Pub alg - RSA Encrypt or Sign(pub 1)
+    RSA n(2048 bits) - ...
+    RSA e(17 bits) - ...
+</pre>
+
+<p> The RFC tells us how to calculate
+the <a href="https://tools.ietf.org/html/rfc4880#section-12.2">fingerprint of a V4 packet</a>: </p>
+
+<p><blockquote>
+A V4 fingerprint is the 160-bit SHA-1 hash of the octet 0x99,
+followed by the two-octet packet length, followed by the entire
+Public-Key packet starting with the version field.  The Key ID is the
+low-order 64 bits of the fingerprint.
+</p></blockquote>
+
+<p> My Python snippet to do this
+is <a href="https://github.com/carlohamalainen/playground/blob/master/pgp/key_id/calculate_key_id.py#L91-L103">here</a>.
+A snippet is below: </p>
+
+<pre>
+xs = read_binary_public_key()
+
+SUBKEY_OFFSET = 3038
+SUBKEY_PLEN   = 269
+
+subkey_packet = xs[SUBKEY_OFFSET:SUBKEY_OFFSET+SUBKEY_PLEN+2] # +2 because the PLEN is short by one?
+
+assert subkey_packet[2] == '\x04'
+
+for_fingerprint = ['\x99'] + subkey_packet
+
+h = hashlib.sha1(to_str(for_fingerprint))
+
+assert h.digest_size == 20
+key_id = to_hexdump(h.digest()[12:], s='')
+
+assert key_id == '17118623766D56F8'
+</pre>
+
+<h2>Subkey binding signature</h2>
+
+<p> The subkey packet at <code>off=3038</code> defines the subkey <code>17118623766D56F8</code>. The
+next packet at <code>off=3310</code> provides proof that the
+key <code>17118623766D56F8</code> is attached to our main public key <code> 269E0DC4E3E4A5B8</code>.
+
+<p> The signature packet doesn't refer to the offset <code>3038</code> or the
+key id <code>17118623766D56F8</code> of the subkey packet, so
+let's check the contents of the signature packet to see if it really does match
+the subkey data. </p>
+
+<pre>
+# off=3038 ctb=b9 tag=14 hlen=3 plen=269
+:public sub key packet:
+    version 4, algo 1, created 1481611279, expires 0
+    pkey[0]: REDACTED006
+    pkey[1]: 010001
+    keyid: 17118623766D56F8
+# off=3310 ctb=89 tag=2 hlen=3 plen=543
+:signature packet: algo 1, keyid 269E0DC4E3E4A5B8
+    version 4, created 1481611279, md5len 0, sigclass 0x18
+    <span style="color:red;">digest algo 8, begin of digest a2 63</span>
+    hashed subpkt 2 len 4 (sig created 2016-12-13)
+    hashed subpkt 27 len 1 (key flags: 0C)
+    subpkt 16 len 8 (issuer key ID 269E0DC4E3E4A5B8)
+    data: REDACTED007
+</pre>
+
+<p> The first thing that we can check is that the left 16 bits of the hash matches <code>A2 63</code> (red line above). Checking
+this hash wasn't completely straightforward, just reading from <a href="https://tools.ietf.org/html/rfc4880">RFC</a>. 
+(Other people ran into <a href="http://crypto.stackexchange.com/questions/2734/openpgp-signature-packet-hashed-data">similar issues</a>.)
+The full block of code is <a href="https://github.com/carlohamalainen/playground/blob/master/pgp/key_id/calculate_key_id.py#L129-L277">here</a>. Sample is below:
+</p>
+
+<pre>
+signature_block = xs[3310:3310+543+2]
+
+# Starts off with two bytes for the length.
+assert 543 == (ord(signature_block[0]) &lt;&lt; 8) + ord(signature_block[1])
+
+hash_subpacket_length = (ord(signature_block[6]) &lt;&lt; 8) + ord(signature_block[7])
+assert hash_subpacket_length == 9
+
+start_of_hashed_part   = 8
+start_of_unhashed_part = 7 + hash_subpacket_length + 1
+
+unhash_subpacket_length = ( (ord(signature_block[start_of_unhashed_part]) &lt;&lt; 8)
+                          +  ord(signature_block[start_of_unhashed_part+1])
+                          )
+
+start_of_left_16 = start_of_unhashed_part + unhash_subpacket_length + 2
+
+left_16 = signature_block[start_of_left_16:start_of_left_16+2]
+
+assert left_16 == ['\xA2', '\x63']
+
+hashed_part_of_sig = signature_block[start_of_hashed_part:start_of_hashed_part+hash_subpacket_length]
+assert len(hashed_part_of_sig) == hash_subpacket_length
+
+public_key_block = xs[0:0+525+2] # +2 for what? 
+assert public_key_block[2] == '\x04'
+
+header1     = ['\x99'] + public_key_block[:8]
+pubkey_body = public_key_block[8:]
+
+header2     = ['\x99'] + subkey_packet[:8]
+subsig_body = subkey_packet[8:]
+
+# Version, class, pub key algo, digest algo.
+version_class_algos = [ '\x04', '\x18',
+                        signature_block[4],
+                        signature_block[5]
+                      ]
+
+m = hash_subpacket_length
+assert m == 9
+hash_chunk_length = [chr(m &gt;&gt; 8), chr(m)]
+
+"""
+According to https://tools.ietf.org/html/rfc4880#section-5.2.4
+the final bit of data is a trailer of six octets:
+
+   V4 signatures also hash in a final trailer of six octets: the
+   version of the Signature packet, i.e., 0x04; 0xFF; and a four-octet,
+   big-endian number that is the length of the hashed data from the
+   Signature packet (note that this number does not include these final
+   six octets).
+
+But in gnupg-2.1.11, we see the following in g10/sig-check.c:
+
+410     else {
+411     byte buf[6];
+412     size_t n;
+413     gcry_md_putc( digest, sig-&gt;pubkey_algo );
+414     gcry_md_putc( digest, sig-&gt;digest_algo );
+415     if( sig-&gt;hashed ) {
+416         n = sig-&gt;hashed-&gt;len;
+417             gcry_md_putc (digest, (n &gt;&gt; 8) );
+418             gcry_md_putc (digest,  n       );
+419         gcry_md_write (digest, sig-&gt;hashed-&gt;data, n);
+420         n += 6;
+421     }
+422     else {
+423       /* Two octets for the (empty) length of the hashed
+424              section. */
+425           gcry_md_putc (digest, 0);
+426       gcry_md_putc (digest, 0);
+427       n = 6;
+428     }
+429     /* add some magic per Section 5.2.4 of RFC 4880.  */
+430     buf[0] = sig-&gt;version;
+431     buf[1] = 0xff;
+432     buf[2] = n &gt;&gt; 24;
+433     buf[3] = n &gt;&gt; 16;
+434     buf[4] = n &gt;&gt;  8;
+435     buf[5] = n;
+436     gcry_md_write( digest, buf, 6 );
+437     }
+438     gcry_md_final( digest );
+
+Line 420 adds 6, so we'll do the same even though it
+seems to disagree with the RFC.
+
+"""
+
+n = m + 6
+assert n == 15
+
+magic = ['\x04', '\xff',
+         chr(n &gt;&gt; 24),
+         chr(n &gt;&gt; 16),
+         chr(n &gt;&gt;  8),
+         chr(n)]
+
+for_digest = []
+
+for_digest += header1
+for_digest += pubkey_body
+
+for_digest += header2
+for_digest += subsig_body 
+
+for_digest += version_class_algos 
+
+for_digest += hash_chunk_length 
+for_digest += hashed_part_of_sig
+
+for_digest += magic
+
+# According to https://tools.ietf.org/html/rfc4880#section-9.4
+# the hash algo 8 is SHA256.
+assert '\x08' == signature_block[5]
+digest = hashlib.sha256(to_str(for_digest)).digest()
+
+assert 'A2 63' == to_hexdump(digest[:2])
+</pre>
+
+<p> We find that the first 16 bits of the digest
+is <code>A2 63</code>, matching the data in the signature packet, so the
+binding signature passes the first test. </p>
+
+<p> The second test is to convert the digest
+to an <a href="https://gnupg.org/documentation/manuals/gcrypt/MPI-formats.html#MPI-formats">MPI</a> and verify it using the specified public key algorithm (an exercise for the reader since <a href="https://pypi.python.org/pypi/pygcrypt">pygcrypt</a> fails to install on my laptop :) </p>
+
+<p> The RFC alone wasn't enough for me to reconstruct the subkey hash check, for example the <code>+6</code> quirk. I had to poke around in <code>gpg 2.1.11</code> to see what was being
+used in the hash. For efficiency reasons, libgcrypt lets you push single characters or blocks of bytes to the hash buffer
+(<code>gcry_md_putc</code> and <code>gcry_md_write</code>; see <a href="https://gnupg.org/documentation/manuals/gcrypt/Working-with-hash-algorithms.html">the libgcrypt docs</a>) so you can't dump a contiguous block of
+memory to compare against <code>for_digest</code>).
+My hacky debugging (print statements) is in <a href="https://github.com/carlohamalainen/playground/blob/master/pgp/key_id/debugging-against-gpg-2.1.11.patch">this patch</a>. For some reason <code>gpg2 --check-sigs 766D56F8!</code> wasn't exercising the
+signature checking code (cached somewhere!?) so on <a href="https://github.com/carlohamalainen/playground/blob/master/pgp/key_id/debugging-against-gpg-2.1.11.patch#L108">line 108</a> of my patch I had to force <code>opt.no_sig_cache = 1;</code>.</p>
+
+
+
+
+<h2> Enigmail and key fingerprints </h2>
+
+<p> So why doesn't Enigmail let you choose which subkey is being used for encryption? As far as I can tell this is by design: </p>
+
+<p> <a href="https://sourceforge.net/p/enigmail/forum/support/thread/37b7a5c8">https://sourceforge.net/p/enigmail/forum/support/thread/37b7a5c8</a> </p>
+
+
+<blockquote> <p> Enigmail does not try to expose all possible features to end users. The goal of Enigmail is to be usable for everyone, including beginners. I think that the concept of subkeys is way too complex even for many average users. Most of them are already confused by public and secret keys.
+
+    <p> You can use gpg.conf to configure the way you want to use subkeys. I will not implement specific features for this in Enigmail. </p>
+</blockquote>
+
+<p> And then: </p>
+
+<blockquote>
+    <p> Unfortunately, this doesn't work in this case. gpg is invoked by enigmail with the -u / --local-user argument, completely overriding my settings in gpg.conf. If you / enigmail invoked it with the --default-key argument, it would be a different story. But it does not. </p>
+
+    <p> ... </p>
+
+    <p> If you would change the next enigmail update to use the --default-key argument instead of the -u argument, it would really help. </p>
+
+    <p> EDIT: </p>
+
+    <p> Ok, patched enigmail myself. It works as expected with --default-key instead of -u. </p>
+</blockquote>
+
+<p> And then: </p>
+
+<blockquote>
+    <p> I have decided that I will not replace "-u" (or the equivalent "--local-user") by "--default-key" in Enigmail. Here is why: </p>
+
+    <p> If a user specified local-user in gpg.conf, then use of "-u" in Enigmail will lead to the key being signed by both keys. This is what some users (especially companies) want, expect from Enigmail, and know that it's been supported for the last 10 years. Using --default-key will break this; in other words, gpg.conf will "win" over Enigmail. </p>
+
+    <p> The requirement to a specific subkey for signing is by far less common, and average users don't need to do this. </p>
+</blockquote>
+
+<p> We can see what's going on by using an old Unix trick: make a gpg2 "binary" that is a shell script and put
+it before the real gpg2 binary in the <code>$PATH</code>: </p>
+
+<pre>
+$ cat bin/gpg2
+#!/bin/bash
+
+echo $@ >> /tmp/gpg2.txt
+
+/usr/bin/gpg2 `echo $@ | sed 's/-u 0x7679121C22964C12888893D1269E0DC4E3E4A5B8/-u 766D56F8!/g'`
+</pre>
+
+<p> The <code>-u 766D56F8!</code> parameter forcibly chooses that subkey (the exclamation mark is needed). </p>
+
+<p> <span style="color:red;">This trick is stupid, and potentially dangerous, since someone could convince you
+to <a href="http://security.stackexchange.com/questions/1806/why-should-one-not-use-the-same-asymmetric-key-for-encryption-as-they-do-for-sig">sign a document with the encryption key instead of the signing key</a>.
+So don't do it! By default gpg2 uses the last encryption subkey for encryption.</span></p>
+
+<h2>Links</h2>
+
+<p> Source code for the snippets in this blog post: <a href="https://github.com/carlohamalainen/playground/tree/master/pgp/key_id">https://github.com/carlohamalainen/playground/tree/master/pgp/key_id</a> </p>
+
+<p> <a href="https://davesteele.github.io/gpg/2014/09/20/anatomy-of-a-gpg-key">Anatomy of a gpg key</a> <p> 
+
+<p> <a href="https://tools.ietf.org/html/rfc4880">RFC 4880</a> </p>
+
+<p> <a href="https://ankitrasto.wordpress.com/2015/08/16/part-12-email-encryption-with-the-yubikey-neo-gpg-and-linux/">Part 1/2: Email Encryption with the Yubikey-NEO, GPG and Linux</a> </p>
+
+<p> <a href="https://ankitrasto.wordpress.com/2015/10/20/part-22-email-encryption-with-the-yubikey-neo-gpg-and-linux/">Part 2/2: Email Encryption with the Yubikey-NEO, GPG and Linux</a> </p>
+
+<p> <a href="https://gnupg.org/documentation/manuals/gcrypt/">Libgcrypt Reference Manual</a> </p>
+
+<p> <a href="https://gnupg.org/download/index.html">GNU Privacy Guard</a> </p>
+
+<p> <a href="https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.1.11.tar.bz2">gnupg-2.1.11.tar.bz2</a>
+and <a href="https://gnupg.org/ftp/gcrypt/gnupg/gnupg-2.1.11.tar.bz2.sig">signature</a> </p>
+
+
+
+
+
+
+
+
