@@ -9,6 +9,7 @@ by [Charles O'Farrell](https://twitter.com/charlesofarrell).
 QuickCheck provides a typeclass ``CoArbitrary`` for generating random *functions*. In this blog post
 we derive ``CoArbitrary`` in a standalone setting.  For the real definition, 
 see [Test.QuickCheck](https://hackage.haskell.org/package/QuickCheck-2.10.0.1/docs/Test-QuickCheck.html#g:10).
+Source code for this post is [here](https://github.com/carlohamalainen/playground/tree/master/haskell/coarbitrary).
 
 Some imports:
 
