@@ -1,0 +1,2 @@
+./readfile -- lazy-bytestring input +RTS -tprof_lazy_bytestring_5000 
+<<ghc: 5381331944 bytes, 10006 GCs, 53216/53264 avg/max bytes residency (2 samples), 2M in use, 0.000 INIT (0.000 elapsed), 0.730 MUT (0.732 elapsed), 0.032 GC (0.030 elapsed) :ghc>>

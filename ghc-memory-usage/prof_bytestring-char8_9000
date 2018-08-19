@@ -1,0 +1,2 @@
+./readfile -- bytestring-char8 input +RTS -tprof_bytestring-char8_9000 
+<<ghc: 9437263456 bytes, 2 GCs, 53264/53264 avg/max bytes residency (1 samples), 9002M in use, 0.000 INIT (0.000 elapsed), 4.612 MUT (7.873 elapsed), 0.239 GC (0.239 elapsed) :ghc>>

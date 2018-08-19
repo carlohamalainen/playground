@@ -1,0 +1,2 @@
+./readfile -- string input +RTS -tprof_string_4000 
+<<ghc: 170010305160 bytes, 325530 GCs, 57504/61720 avg/max bytes residency (2 samples), 1M in use, 0.000 INIT (0.144 elapsed), 29.492 MUT (29.772 elapsed), 5.547 GC (5.553 elapsed) :ghc>>
