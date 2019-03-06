@@ -1,0 +1,14 @@
+start: (0, 0)	n: 0	Pr(on board): 1.0
+start: (3, 3)	n: 1	Pr(on board): 1.0
+start: (0, 0)	n: 1	Pr(on board): 0.25
+start: (3, 3)	n: 4	Pr(on board): 0.48291015625
+start: (3, 3)	n: 5	Pr(on board): 0.35565185546875
+start: (3, 3)	n: 100	Pr(on board): 5.730392258771815e-13
+
+pr on board from (3,3) after 5 steps: 0.3554297
+
+start: (0, 0)	Avg nr steps to absorb (MC): 1.9528841
+start: (0, 0)	Avg nr steps (F matrix):     1.9525249995183136
+
+start: (3, 3)	Avg nr steps to absorb (MC): 5.4148167
+start: (3, 3)	Avg nr steps (F matrix):     5.417750460813215
