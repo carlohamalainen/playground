@@ -21,9 +21,9 @@ instance H.Hashable Grid where
 instance NFData Grid where
     rnf (Grid x y z) = rnf x `seq` rnf y `seq` rnf z
 
--- Starting grids are based on two airports that Blinco has been to.
+-- Starting grids are based on two airports that someone has been to.
 startingGrids :: [Grid]
-startingGrids = concat [ f a b  | a <- blinco, b <- blinco]
+startingGrids = concat [ f a b  | a <- someone, b <- someone]
   where
     f a b = [ Grid (Just a) (Just b) Nothing
             , Grid (Just a) Nothing  (Just b)
@@ -37,12 +37,12 @@ extendGrid iata (Grid (Just a) Nothing  (Just b)) = [ Grid (Just a) (Just x) (Ju
 extendGrid iata (Grid Nothing  (Just a) (Just b)) = [ Grid (Just x) (Just a) (Just b) | x <- HS.toList iata ]
 extendGrid _    g = error $ "Can't extend this grid: " ++ show g
 
--- The score of a grid is the number of row and column codes that Blinco has visited.
+-- The score of a grid is the number of row and column codes that someone has visited.
 -- So the maximum score for a grid is 6.
 score :: Grid -> Integer
 score (Grid (Just a) (Just b) (Just c)) = sum [f x | x <- [a, b, c] ++ verticals [a, b, c]]
   where
-    f x = if x `HS.member` blinco' then 1 else 0
+    f x = if x `HS.member` someone' then 1 else 0
 score g = error $ "Can't compute score of incomplete grid: " ++ show g
 
 -- Given a grid, extend it, check that it is valid, and keep only those
@@ -55,13 +55,13 @@ dostuff iataFull x = map (\g -> (score g, g)) goodTriples
     -- A grid is valid if each row (reading left to right) and each
     -- column (reading top down) is an IATA code.
     isValid :: Grid -> Bool
-    isValid (Grid (Just a) (Just b) (Just c)) = and [v `HS.member` iataFull && length (uniq $ [a, b, c] ++ verticals [a, b, c]) >= 5 | v <- verticals [a, b, c]]
+    isValid (Grid (Just a) (Just b) (Just c)) = and [v `HS.member` iataFull && length (uniq $ [a, b, c] ++ verticals [a, b, c]) >= 4 | v <- verticals [a, b, c]]
     isValid g = error $ "Can't check validity of a partial grid: " ++ show g
 
 uniq :: (Ord t, H.Hashable t) => [t] -> [t]
 uniq = HS.toList . HS.fromList
 
--- Airports that Blinco has been to.
+-- Airports that someone has been to.
 blinco :: [String]
 blinco = [ "BNE" , "CNS" , "SYD" , "TSV"
          , "NTL" , "CTL" , "ULP" , "MKY"
@@ -90,13 +90,79 @@ blinco = [ "BNE" , "CNS" , "SYD" , "TSV"
          , "LCY" , "CDG" , "TXL" , "FRA"
          , "MUC" , "BCN" , "BIO" , "FCO"
          , "VCE" , "MXP" , "GVA" , "CPH"
-         , "SVO" , "LED"
+         , "SVO" , "LED" , "HAN" , "SMF"
+         , "LSE"
          ]
 
+tim :: [String]
+tim = [ "AKL"
+      , "ASP"
+      , "ATL"
+      , "BLR"
+      , "BNE"
+      , "BOM"
+      , "BOS"
+      , "BWI"
+      , "CDG"
+      , "CLT"
+      , "CNS"
+      , "CPX"
+      , "DCA"
+      , "DEL"
+      , "DEN"
+      , "EDI"
+      , "EWR"
+      , "FCO"
+      , "FLL"
+      , "FUK"
+      , "HEL"
+      , "IAD"
+      , "ICN"
+      , "IND"
+      , "JFK"
+      , "LAX"
+      , "LHR"
+      , "LST"
+      , "MCT"
+      , "MEL"
+      , "MEM"
+      , "MSP"
+      , "NAN"
+      , "NKM"
+      , "ORD"
+      , "PHL"
+      , "PRG"
+      , "PVD"
+      , "SAN"
+      , "SFO"
+      , "SIN"
+      , "SJU"
+      , "SOU"
+      , "SYD"
+      , "TSV"
+      , "YVR"
+      , "YYZ"
+      , "ZRH"
+      , "MUC"
+      , "CBR"
+      , "CLU"
+      , "HUF"
+      , "MIE"
+      , "RID"
+      , "BFR"
+      , "ARN"
+      -- , "KEF"
+      ]
 
 -- As a hash set for efficient membership testing.
 blinco' :: HS.Set String
 blinco' = HS.fromList blinco
+
+tim' :: HS.Set String
+tim' = HS.fromList tim
+
+someone  = tim
+someone' = tim'
 
 -- Extract the top-down column codes.
 verticals :: [String] -> [String]
@@ -113,7 +179,7 @@ main = do
 
     let grids = uniq $ concat $ parMap rdeepseq (dostuff $ HS.fromList iataFull) startingGrids
 
-    forM_ (filter (\(s, _) -> s >= 5) grids) $ \(_, Grid (Just x) (Just y) (Just z)) -> do putStrLn x
+    forM_ (filter (\(s, _) -> s >= 4) grids) $ \(_, Grid (Just x) (Just y) (Just z)) -> do putStrLn x
                                                                                            putStrLn y
                                                                                            putStrLn z
                                                                                            putStrLn ""
