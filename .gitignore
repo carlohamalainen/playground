@@ -35,3 +35,10 @@ haskell/zipper/Zipper.dyn_o
 haskell/bigdata/.cabal-sandbox/*
 haskell/bigdata/cabal.sandbox.config
 haskell/bigdata/dist/
+
+ghc-memory-usage/readfile
+ghc-memory-usage/readfile.hi
+ghc-memory-usage/readfile.hs
+ghc-memory-usage/readfile.o
+
+python/beautiful_soup_4/virtualenv_py36/*
