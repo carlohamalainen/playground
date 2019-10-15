@@ -41,7 +41,7 @@ def scrape(url):
         name  = h3.contents[0].strip()
 
         table0 = h3.find_next_sibling('table')
-        table1 = h3.find_next_sibling('table').find_next_sibling('table')
+        table1 = table0.find_next_sibling('table')
 
         tables[name] = [parse_rows(table0), parse_html_table_with_header(table1)]
 
