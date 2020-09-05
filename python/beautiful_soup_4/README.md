@@ -293,7 +293,7 @@ Install a virtualenv using requirements.txt
 
 # Scrape Yahoo stock prices
 
-    $ python yahoo_stock_prices.py >> README.md
+    $ python yahoo_stock_prices.py
 
 
     AUD to SGD: ('AUDSGD=X', 'Europe/London', '4:21PM BST', 0.9273)
