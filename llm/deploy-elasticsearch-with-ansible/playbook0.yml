@@ -1,0 +1,160 @@
+---
+- name: Deploy Elasticsearch 8.11
+  hosts: elasticsearch_servers
+  become: yes
+  vars:
+    es_version: "8.11.0"
+    es_install_dir: "/opt/elasticsearch"
+    es_data_dir: "/var/lib/elasticsearch"
+    es_user: "elasticsearch"
+    es_group: "elasticsearch"
+    es_tarball_url: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ es_version }}-linux-x86_64.tar.gz"
+    es_tarball_dest: "/tmp/elasticsearch-{{ es_version }}.tar.gz"
+    es_heap_size: "2g"
+    es_cluster_name: "my-cluster"
+    es_node_name: "node-1"
+    es_network_host: "0.0.0.0"
+    es_http_port: 9200
+    es_discovery_seed_hosts: "[]"
+    elastic_password: "your_elastic_password"
+    admin_user: "admin_user"
+    admin_password: "your_admin_password"
+
+  tasks:
+    - name: Ensure Java is installed
+      package:
+        name: openjdk-11-jdk
+        state: present
+
+    - name: Create Elasticsearch group
+      group:
+        name: "{{ es_group }}"
+        state: present
+
+    - name: Create Elasticsearch user
+      user:
+        name: "{{ es_user }}"
+        group: "{{ es_group }}"
+        system: yes
+        shell: /sbin/nologin
+
+    - name: Download Elasticsearch tarball
+      get_url:
+        url: "{{ es_tarball_url }}"
+        dest: "{{ es_tarball_dest }}"
+        mode: '0644'
+
+    - name: Create installation directory
+      file:
+        path: "{{ es_install_dir }}"
+        state: directory
+        owner: "{{ es_user }}"
+        group: "{{ es_group }}"
+        mode: '0755'
+
+    - name: Extract Elasticsearch tarball
+      unarchive:
+        src: "{{ es_tarball_dest }}"
+        dest: "{{ es_install_dir }}"
+        remote_src: yes
+        owner: "{{ es_user }}"
+        group: "{{ es_group }}"
+
+    - name: Create data directory
+      file:
+        path: "{{ es_data_dir }}"
+        state: directory
+        owner: "{{ es_user }}"
+        group: "{{ es_group }}"
+        mode: '0755'
+
+    - name: Configure elasticsearch.yml
+      copy:
+        dest: "{{ es_install_dir }}/elasticsearch-{{ es_version }}/config/elasticsearch.yml"
+        content: |
+          cluster.name: "{{ es_cluster_name }}"
+          node.name: "{{ es_node_name }}"
+          path.data: "{{ es_data_dir }}"
+          network.host: "{{ es_network_host }}"
+          http.port: "{{ es_http_port }}"
+          discovery.seed_hosts: {{ es_discovery_seed_hosts }}
+          xpack.security.enabled: true
+        owner: "{{ es_user }}"
+        group: "{{ es_group }}"
+        mode: '0644'
+
+    - name: Configure JVM options
+      lineinfile:
+        path: "{{ es_install_dir }}/elasticsearch-{{ es_version }}/config/jvm.options"
+        regexp: '^-Xms.*$'
+        line: "-Xms{{ es_heap_size }}"
+        owner: "{{ es_user }}"
+        group: "{{ es_group }}"
+
+    - name: Configure systemd service
+      copy:
+        dest: /etc/systemd/system/elasticsearch.service
+        content: |
+          [Unit]
+          Description=Elasticsearch
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ es_user }}
+          Group={{ es_group }}
+          ExecStart={{ es_install_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch
+          Restart=on-failure
+          LimitNOFILE=65536
+
+          [Install]
+          WantedBy=multi-user.target
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Elasticsearch
+      systemd:
+        name: elasticsearch
+        enabled: yes
+        state: started
+
+    - name: Wait for Elasticsearch to start
+      wait_for:
+        host: "localhost"
+        port: "{{ es_http_port }}"
+        delay: 15
+        timeout: 60
+
+    - name: Set built-in user passwords
+      shell: "{{ es_install_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch-reset-password -u elastic -s -b -a --password '{{ elastic_password }}'"
+      args:
+        executable: /bin/bash
+      register: elastic_password_result
+
+    - name: Create admin user with superuser role
+      uri:
+        url: "https://localhost:{{ es_http_port }}/_security/user/{{ admin_user }}"
+        method: PUT
+        user: "elastic"
+        password: "{{ elastic_password }}"
+        body: >
+          {
+            "password": "{{ admin_password }}",
+            "roles": ["superuser"]
+          }
+        body_format: json
+        headers:
+          Content-Type: "application/json"
+        validate_certs: false
+      register: admin_user_result
+      ignore_errors: yes
+
+    - name: Display admin user creation result
+      debug:
+        msg: "{{ admin_user_result }}"
+

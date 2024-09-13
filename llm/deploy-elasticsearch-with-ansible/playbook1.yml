@@ -1,0 +1,178 @@
+---
+- name: Deploy Elasticsearch 8.11 with Kibana Control
+  hosts: elasticsearch_servers
+  become: yes
+  vars:
+    es_version: "8.11.0"
+    es_install_dir: "/opt/elasticsearch"
+    es_data_dir: "/var/lib/elasticsearch"
+    es_user: "elasticsearch"
+    es_group: "elasticsearch"
+    es_tarball_url: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ es_version }}-linux-x86_64.tar.gz"
+    es_tarball_dest: "/tmp/elasticsearch-{{ es_version }}.tar.gz"
+    es_heap_size: "2g"
+    es_cluster_name: "my-cluster"
+    es_node_name: "node-1"
+    es_network_host: "0.0.0.0"
+    es_http_port: 9200
+    es_discovery_seed_hosts: "[]"
+    elastic_password: "your_elastic_password"
+    admin_user: "admin_user"
+    admin_password: "your_admin_password"
+    kibana_user: "admin_user"  # Using the same admin user for Kibana
+    kibana_password: "your_admin_password"  # Using the same password
+    kibana_role: "kibana_admin_role"
+
+  tasks:
+    # [Previous tasks remain unchanged]
+
+    # Ensure Java is installed
+    - name: Ensure Java is installed
+      package:
+        name: openjdk-11-jdk
+        state: present
+
+    # [Other tasks remain unchanged up to starting Elasticsearch]
+
+    # Enable and start Elasticsearch
+    - name: Enable and start Elasticsearch
+      systemd:
+        name: elasticsearch
+        enabled: yes
+        state: started
+
+    # Wait for Elasticsearch to start
+    - name: Wait for Elasticsearch to start
+      wait_for:
+        host: "localhost"
+        port: "{{ es_http_port }}"
+        delay: 15
+        timeout: 60
+
+    # Set built-in user passwords
+    - name: Set built-in user passwords
+      shell: "{{ es_install_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch-reset-password -u elastic -s -b -a --password '{{ elastic_password }}'"
+      args:
+        executable: /bin/bash
+      register: elastic_password_result
+
+    # Create Kibana role with full permissions
+    - name: Create Kibana role with full permissions
+      uri:
+        url: "https://localhost:{{ es_http_port }}/_security/role/{{ kibana_role }}"
+        method: PUT
+        user: "elastic"
+        password: "{{ elastic_password }}"
+        body: >
+          {
+            "cluster": ["all"],
+            "indices": [
+              {
+                "names": [".kibana*", "kibana_sample_data_*", "*"],
+                "privileges": ["all"]
+              }
+            ],
+            "applications": [
+              {
+                "application": "kibana-.kibana",
+                "privileges": ["all"],
+                "resources": ["*"]
+              }
+            ],
+            "run_as": ["*"]
+          }
+      body_format: json
+      headers:
+        Content-Type: "application/json"
+      validate_certs: false
+      register: kibana_role_result
+      ignore_errors: yes
+
+    # Assign Kibana role to admin user
+    - name: Assign Kibana role to admin user
+      uri:
+        url: "https://localhost:{{ es_http_port }}/_security/user/{{ kibana_user }}"
+        method: PUT
+        user: "elastic"
+        password: "{{ elastic_password }}"
+        body: >
+          {
+            "password": "{{ kibana_password }}",
+            "roles": ["superuser", "{{ kibana_role }}"]
+          }
+      body_format: json
+      headers:
+        Content-Type: "application/json"
+      validate_certs: false
+      register: kibana_user_result
+      ignore_errors: yes
+
+    - name: Display Kibana user creation result
+      debug:
+        msg: "{{ kibana_user_result }}"
+
+    # Optional: Install Kibana
+    - name: Download Kibana tarball
+      get_url:
+        url: "https://artifacts.elastic.co/downloads/kibana/kibana-{{ es_version }}-linux-x86_64.tar.gz"
+        dest: "/tmp/kibana-{{ es_version }}.tar.gz"
+        mode: '0644'
+
+    - name: Extract Kibana tarball
+      unarchive:
+        src: "/tmp/kibana-{{ es_version }}.tar.gz"
+        dest: "/opt/kibana"
+        remote_src: yes
+        owner: "{{ es_user }}"
+        group: "{{ es_group }}"
+
+    - name: Configure kibana.yml
+      copy:
+        dest: "/opt/kibana/kibana-{{ es_version }}/config/kibana.yml"
+        content: |
+          server.host: "0.0.0.0"
+          elasticsearch.hosts: ["http://localhost:{{ es_http_port }}"]
+          elasticsearch.username: "{{ kibana_user }}"
+          elasticsearch.password: "{{ kibana_password }}"
+      owner: "{{ es_user }}"
+      group: "{{ es_group }}"
+      mode: '0644'
+
+    - name: Configure Kibana systemd service
+      copy:
+        dest: /etc/systemd/system/kibana.service
+        content: |
+          [Unit]
+          Description=Kibana
+          After=network.target
+
+          [Service]
+          Type=simple
+          User={{ es_user }}
+          Group={{ es_group }}
+          ExecStart=/opt/kibana/kibana-{{ es_version }}/bin/kibana
+          Restart=on-failure
+
+          [Install]
+          WantedBy=multi-user.target
+      owner: root
+      group: root
+      mode: '0644'
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+    - name: Enable and start Kibana
+      systemd:
+        name: kibana
+        enabled: yes
+        state: started
+
+    - name: Wait for Kibana to start
+      wait_for:
+        host: "localhost"
+        port: 5601
+        delay: 15
+        timeout: 60
+
