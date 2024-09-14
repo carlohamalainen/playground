@@ -40,7 +40,7 @@ pkg-resources==0.0.0
 prometheus-client==0.8.0
 prompt-toolkit==3.0.5
 ptyprocess==0.6.0
-Pygments==2.7.4
+Pygments==2.15.0
 pylint==2.5.3
 pyparsing==2.4.7
 pyrsistent==0.16.0
