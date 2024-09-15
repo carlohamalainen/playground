@@ -15,26 +15,26 @@
         state: directory
         mode: '0755'
 
-    # - name: Download and unpack Elasticsearch
-    #   unarchive:
-    #     src: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ es_version }}-linux-x86_64.tar.gz"
-    #     dest: "{{ elk_dir }}"
-    #     remote_src: yes
-    #     creates: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
+    - name: Download and unpack Elasticsearch
+      unarchive:
+        src: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ es_version }}-linux-x86_64.tar.gz"
+        dest: "{{ elk_dir }}"
+        remote_src: yes
+        creates: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
 
-    # - name: Download and unpack Kibana
-    #   unarchive:
-    #     src: "https://artifacts.elastic.co/downloads/kibana/kibana-{{ kibana_version }}-linux-x86_64.tar.gz"
-    #     dest: "{{ elk_dir }}"
-    #     remote_src: yes
-    #     creates: "{{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64"
+    - name: Download and unpack Kibana
+      unarchive:
+        src: "https://artifacts.elastic.co/downloads/kibana/kibana-{{ kibana_version }}-linux-x86_64.tar.gz"
+        dest: "{{ elk_dir }}"
+        remote_src: yes
+        creates: "{{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64"
 
-    # - name: Download and unpack Filebeat
-    #   unarchive:
-    #     src: "https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-{{ filebeat_version }}-linux-x86_64.tar.gz"
-    #     dest: "{{ elk_dir }}"
-    #     remote_src: yes
-    #     creates: "{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64"
+    - name: Download and unpack Filebeat
+      unarchive:
+        src: "https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-{{ filebeat_version }}-linux-x86_64.tar.gz"
+        dest: "{{ elk_dir }}"
+        remote_src: yes
+        creates: "{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64"
 
     - name: Create Elasticsearch configuration
       copy:
