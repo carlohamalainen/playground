@@ -1,0 +1,6 @@
+all:
+  hosts:
+    homelab:
+      ansible_user: carlo
+      ansible_host: homelab
+      ansible_connection: ssh

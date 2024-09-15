@@ -1,0 +1,53 @@
+---
+- name: Uninstall Elasticsearch and Kibana
+  hosts: homelab
+  vars:
+    elk_dir: "/home/carlo/elk"
+
+  tasks:
+    - name: Stop Elasticsearch service
+      systemd:
+        name: elasticsearch
+        state: stopped
+        scope: user
+      ignore_errors: yes
+
+    - name: Stop Kibana service
+      systemd:
+        name: kibana
+        state: stopped
+        scope: user
+      ignore_errors: yes
+
+    - name: Stop Filebeat service
+      systemd:
+        name: filebeat
+        state: stopped
+        scope: user
+      ignore_errors: yes
+
+    - name: Remove Elasticsearch systemd user service
+      file:
+        path: /home/carlo/.config/systemd/user/elasticsearch.service
+        state: absent
+      ignore_errors: yes
+
+    - name: Remove Kibana systemd user service
+      file:
+        path: /home/carlo/.config/systemd/user/kibana.service
+        state: absent
+      ignore_errors: yes
+
+    - name: Remove Filebeat systemd user service
+      file:
+        path: /home/carlo/.config/systemd/user/filebeat.service
+        state: absent
+      ignore_errors: yes
+
+    - name: Reload systemd daemon
+      command: systemctl --user daemon-reload
+
+    # - name: Remove ELK directory
+    #   file:
+    #     path: "{{ elk_dir }}"
+    #     state: absent

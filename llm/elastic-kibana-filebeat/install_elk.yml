@@ -1,0 +1,360 @@
+---
+- name: Deploy Elasticsearch and Kibana
+  hosts: homelab
+  vars:
+    elk_dir: "/home/carlo/elk"
+    es_version: "8.11.3"
+    kibana_version: "7.17.9"
+    filebeat_version: "7.15.1"
+
+  tasks:
+
+    - name: Create ELK directory
+      file:
+        path: "{{ elk_dir }}"
+        state: directory
+        mode: '0755'
+
+    # - name: Download and unpack Elasticsearch
+    #   unarchive:
+    #     src: "https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-{{ es_version }}-linux-x86_64.tar.gz"
+    #     dest: "{{ elk_dir }}"
+    #     remote_src: yes
+    #     creates: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
+
+    # - name: Download and unpack Kibana
+    #   unarchive:
+    #     src: "https://artifacts.elastic.co/downloads/kibana/kibana-{{ kibana_version }}-linux-x86_64.tar.gz"
+    #     dest: "{{ elk_dir }}"
+    #     remote_src: yes
+    #     creates: "{{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64"
+
+    # - name: Download and unpack Filebeat
+    #   unarchive:
+    #     src: "https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-{{ filebeat_version }}-linux-x86_64.tar.gz"
+    #     dest: "{{ elk_dir }}"
+    #     remote_src: yes
+    #     creates: "{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64"
+
+    - name: Create Elasticsearch configuration
+      copy:
+        content: |
+          cluster.name: homelab-cluster
+          node.name: {{ ansible_hostname }}
+          network.host: 0.0.0.0
+          http.port: 9200
+          discovery.seed_hosts: ["homelab"]
+          cluster.initial_master_nodes: ["homelab"]
+
+          path.data: "{{ elk_dir }}/elasticsearch-{{ es_version }}/data"
+          path.logs: "{{ elk_dir }}/elasticsearch-{{ es_version }}/logs"
+
+          xpack.security.enabled: true
+          xpack.security.enrollment.enabled: true
+
+          xpack.security.http.ssl:
+            enabled: true
+            key: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.key
+            certificate: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.crt
+            certificate_authorities: [ "certs/ca/ca.crt" ]
+
+          xpack.security.transport.ssl:
+            enabled: true
+            verification_mode: certificate
+            key: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.key
+            certificate: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.crt
+            certificate_authorities: [ "certs/ca/ca.crt" ]
+        dest: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/elasticsearch.yml"
+        mode: '0644'
+
+    - name: Wipe certs
+      file:
+        path: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs"
+        state: absent
+
+    - name: Ensure certs directory exists
+      file:
+        path: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs"
+        state: directory
+        mode: '0755'
+
+
+    - name: Generate CA certificate
+      command: >
+        ./bin/elasticsearch-certutil ca --silent --pem
+        --out config/certs/ca.zip
+      args:
+        chdir: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
+        creates: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca.zip"
+
+    - name: Unzip CA certificate
+      unarchive:
+        src: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca.zip"
+        dest: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/"
+        remote_src: yes
+
+    - name: Generate HTTP certificate
+      command: >
+        ./bin/elasticsearch-certutil cert --silent --pem
+        --ca-cert config/certs/ca/ca.crt
+        --ca-key config/certs/ca/ca.key
+        --name {{ ansible_hostname }}
+        --out config/certs/http.zip
+      args:
+        chdir: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
+        creates: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/http.zip"
+
+    - name: Unzip HTTP certificate
+      unarchive:
+        src: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/http.zip"
+        dest: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/"
+        remote_src: yes
+
+    - name: Generate transport certificate
+      command: >
+        ./bin/elasticsearch-certutil cert --silent --pem
+        --ca-cert config/certs/ca/ca.crt
+        --ca-key config/certs/ca/ca.key
+        --name {{ ansible_hostname }}
+        --out config/certs/transport.zip
+      args:
+        chdir: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
+        creates: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/transport.zip"
+
+    - name: Unzip transport certificate
+      unarchive:
+        src: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/transport.zip"
+        dest: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/"
+        remote_src: yes
+
+    - name: Set permissions for certificates
+      file:
+        path: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs"
+        mode: '0700'
+        recurse: yes
+
+    - name: Set permissions for certificates
+      file:
+        path: "{{ item }}"
+        mode: '0600'
+      loop:
+        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.crt"
+        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.key"
+        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/{{ ansible_hostname }}/{{ ansible_hostname }}.crt"
+        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/{{ ansible_hostname }}/{{ ansible_hostname }}.key"
+
+    - name: Create Kibana configuration
+      copy:
+        content: |
+          server.host: 0.0.0.0
+
+          elasticsearch.username: "{{ lookup('env', 'CARLO_ELASTIC_USER') }}"
+          elasticsearch.password: "{{ lookup('env', 'CARLO_ELASTIC_PASSWORD') }}"
+
+          elasticsearch:
+            hosts: ["{{ elasticsearch_url }}"]
+            ssl:
+              verificationMode: full
+              certificateAuthorities: "{{ ca_cert_path }}"
+        dest: "{{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64/config/kibana.yml"
+        mode: '0644'
+      vars:
+        elasticsearch_url: "https://{{ ansible_hostname }}:9200"
+        ca_cert_path: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.crt"
+
+    - name: Create Filebeat configuration
+      copy:
+        content: |
+          filebeat.inputs:
+          - type: log
+            enabled: true
+            paths:
+              - /var/log/*.log
+
+          # https://discuss.elastic.co/t/filebeat-and-glibc-errors-on-ubuntu-22-04/306653/2
+          seccomp:
+            default_action: allow
+            syscalls:
+            - action: allow
+              names:
+              - rseq
+
+          output.elasticsearch:
+            hosts: ["https://{{ ansible_hostname }}:9200"]
+            username: "{{ lookup('env', 'CARLO_ELASTIC_USER') }}"
+            password: "{{ lookup('env', 'CARLO_ELASTIC_PASSWORD') }}"
+            ssl:
+              certificate_authorities: ["{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/ca.crt"]
+            index: "filebeat-%{[agent.version]}-%{+yyyy.MM.dd}"
+
+          setup.template.name: "filebeat"
+          setup.template.pattern: "filebeat-*"
+          setup.ilm.enabled: true
+          setup.ilm.rollover_alias: "filebeat"
+          setup.ilm.pattern: "{now/d}-000001"
+          setup.ilm.policy_name: "filebeat-14-days"
+
+          setup.kibana:
+            host: "https://{{ ansible_hostname }}:5601"
+            ssl:
+              enabled: true
+              verification_mode: none
+
+          setup.template.settings:
+            index.number_of_shards: 1
+        dest: "{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/filebeat.yml"
+        mode: '0644'
+
+    - name: Create Filebeat ILM policy file
+      copy:
+        content: |
+          {
+            "policy": {
+              "phases": {
+                "hot": {
+                  "actions": {
+                    "rollover": {
+                      "max_age": "1d",
+                      "max_size": "50gb"
+                    }
+                  }
+                },
+                "delete": {
+                  "min_age": "14d",
+                  "actions": {
+                    "delete": {}
+                  }
+                }
+              }
+            }
+          }
+        dest: "{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/ilm-policy.json"
+        mode: '0644'
+
+    - name: Copy CA certificate for Filebeat
+      copy:
+        src: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.crt"
+        dest: "{{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/ca.crt"
+        remote_src: yes
+        mode: '0644'
+
+    - name: Remove existing Elasticsearch keystore
+      file:
+        path: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/elasticsearch.keystore"
+        state: absent
+
+    - name: Set bootstrap password
+      shell: |
+        echo "{{ lookup('env', 'ELASTIC_PASSWORD') }}" | {{ elk_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch-keystore add -f bootstrap.password --stdin
+      # no_log: true
+
+    - name: Attempt to delete existing CARLO_ELASTIC_USER
+      command: >
+        {{ elk_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch-users userdel
+        {{ lookup('env', 'CARLO_ELASTIC_USER') }}
+      ignore_errors: yes
+
+    - name: Create new user with specified roles
+      command: >
+        {{ elk_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch-users useradd
+        {{ lookup('env', 'CARLO_ELASTIC_USER') }}
+        -p {{ lookup('env', 'CARLO_ELASTIC_PASSWORD') }}
+        -r superuser,kibana_system
+      # no_log: true
+
+    - name: Enable systemd linger for carlo
+      command: loginctl enable-linger carlo
+      become: yes
+
+    - name: Create Elasticsearch systemd user service
+      copy:
+        content: |
+          [Unit]
+          Description=Elasticsearch
+          After=network.target
+
+          [Service]
+          Type=simple
+          ExecStart={{ elk_dir }}/elasticsearch-{{ es_version }}/bin/elasticsearch
+          WorkingDirectory={{ elk_dir }}/elasticsearch-{{ es_version }}
+          Restart=always
+          RestartSec=10
+          LimitNOFILE=65535
+
+          [Install]
+          WantedBy=default.target
+        dest: /home/carlo/.config/systemd/user/elasticsearch.service
+        mode: '0644'
+
+    - name: Create Kibana systemd user service
+      copy:
+        content: |
+          [Unit]
+          Description=Kibana
+          After=elasticsearch.service
+
+          [Service]
+          Type=simple
+          ExecStart={{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64/bin/kibana
+          WorkingDirectory={{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64
+          Restart=always
+          RestartSec=10
+          Environment=NODE_OPTIONS="--max-old-space-size=512"
+
+          [Install]
+          WantedBy=default.target
+        dest: /home/carlo/.config/systemd/user/kibana.service
+        mode: '0644'
+
+    - name: Create Filebeat systemd user service
+      copy:
+        content: |
+          [Unit]
+          Description=Filebeat
+          Documentation=https://www.elastic.co/products/beats/filebeat
+          Wants=network-online.target
+          After=network-online.target
+
+          [Service]
+          Environment="BEAT_LOG_OPTS="
+          Environment="BEAT_CONFIG_OPTS=-c {{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/filebeat.yml"
+          Environment="BEAT_PATH_OPTS=--path.home {{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64 --path.config {{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64 --path.data {{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/data --path.logs {{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/logs"
+          WorkingDirectory={{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64
+          ExecStart={{ elk_dir }}/filebeat-{{ filebeat_version }}-linux-x86_64/filebeat $BEAT_LOG_OPTS $BEAT_CONFIG_OPTS $BEAT_PATH_OPTS
+          Restart=always
+
+          [Install]
+          WantedBy=default.target
+        dest: /home/carlo/.config/systemd/user/filebeat.service
+        mode: '0644'
+
+    - name: Reload systemd daemon
+      command: systemctl --user daemon-reload
+
+    - name: Enable and start Kibana service
+      systemd:
+        name: kibana
+        enabled: yes
+        state: started
+        scope: user
+
+    - name: Enable and start Elasticsearch service
+      systemd:
+        name: elasticsearch
+        enabled: yes
+        state: started
+        scope: user
+
+    - name: Enable and start Kibana service
+      systemd:
+        name: kibana
+        enabled: yes
+        state: started
+        scope: user
+
+    - name: Enable and start Filebeat service
+      systemd:
+        name: filebeat
+        enabled: yes
+        state: started
+        scope: user
