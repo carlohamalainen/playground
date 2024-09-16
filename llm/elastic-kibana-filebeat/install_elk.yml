@@ -40,7 +40,7 @@
       copy:
         content: |
           cluster.name: homelab-cluster
-          node.name: {{ ansible_hostname }}
+          node.name: {{ inventory_hostnamename }}
           network.host: 0.0.0.0
           http.port: 9200
           discovery.seed_hosts: ["homelab"]
@@ -54,15 +54,15 @@
 
           xpack.security.http.ssl:
             enabled: true
-            key: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.key
-            certificate: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.crt
+            key: certs/{{ inventory_hostnamename }}/{{ inventory_hostnamename }}.key
+            certificate: certs/{{ inventory_hostnamename }}/{{ inventory_hostnamename }}.crt
             certificate_authorities: [ "certs/ca/ca.crt" ]
 
           xpack.security.transport.ssl:
             enabled: true
             verification_mode: certificate
-            key: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.key
-            certificate: certs/{{ ansible_hostname }}/{{ ansible_hostname }}.crt
+            key: certs/{{ inventory_hostnamename }}/{{ inventory_hostnamename }}.key
+            certificate: certs/{{ inventory_hostnamename }}/{{ inventory_hostnamename }}.crt
             certificate_authorities: [ "certs/ca/ca.crt" ]
         dest: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/elasticsearch.yml"
         mode: '0644'
@@ -98,7 +98,7 @@
         ./bin/elasticsearch-certutil cert --silent --pem
         --ca-cert config/certs/ca/ca.crt
         --ca-key config/certs/ca/ca.key
-        --name {{ ansible_hostname }}
+        --name {{ inventory_hostnamename }}
         --out config/certs/http.zip
       args:
         chdir: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
@@ -115,7 +115,7 @@
         ./bin/elasticsearch-certutil cert --silent --pem
         --ca-cert config/certs/ca/ca.crt
         --ca-key config/certs/ca/ca.key
-        --name {{ ansible_hostname }}
+        --name {{ inventory_hostnamename }}
         --out config/certs/transport.zip
       args:
         chdir: "{{ elk_dir }}/elasticsearch-{{ es_version }}"
@@ -140,8 +140,8 @@
       loop:
         - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.crt"
         - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.key"
-        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/{{ ansible_hostname }}/{{ ansible_hostname }}.crt"
-        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/{{ ansible_hostname }}/{{ ansible_hostname }}.key"
+        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/{{ inventory_hostnamename }}/{{ inventory_hostnamename }}.crt"
+        - "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/{{ inventory_hostnamename }}/{{ inventory_hostnamename }}.key"
 
     - name: Create Kibana configuration
       copy:
@@ -159,7 +159,7 @@
         dest: "{{ elk_dir }}/kibana-{{ kibana_version }}-linux-x86_64/config/kibana.yml"
         mode: '0644'
       vars:
-        elasticsearch_url: "https://{{ ansible_hostname }}:9200"
+        elasticsearch_url: "https://{{ inventory_hostnamename }}:9200"
         ca_cert_path: "{{ elk_dir }}/elasticsearch-{{ es_version }}/config/certs/ca/ca.crt"
 
     - name: Create Filebeat configuration
@@ -180,7 +180,7 @@
               - rseq
 
           output.elasticsearch:
-            hosts: ["https://{{ ansible_hostname }}:9200"]
+            hosts: ["https://{{ inventory_hostnamename }}:9200"]
             username: "{{ lookup('env', 'CARLO_ELASTIC_USER') }}"
             password: "{{ lookup('env', 'CARLO_ELASTIC_PASSWORD') }}"
             ssl:
@@ -195,7 +195,7 @@
           setup.ilm.policy_name: "filebeat-14-days"
 
           setup.kibana:
-            host: "https://{{ ansible_hostname }}:5601"
+            host: "https://{{ inventory_hostnamename }}:5601"
             ssl:
               enabled: true
               verification_mode: none

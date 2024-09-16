@@ -2,5 +2,5 @@ all:
   hosts:
     homelab:
       ansible_user: carlo
-      ansible_host: homelab
+      inventory_hostname: homelab
       ansible_connection: ssh
